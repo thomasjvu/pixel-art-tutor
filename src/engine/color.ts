@@ -1,4 +1,5 @@
 export function normalizeHex(input: string): string | null {
+  if (typeof input !== "string") return null;
   let s = input.trim().toLowerCase();
   if (!s.startsWith("#")) s = "#" + s;
   if (/^#[0-9a-f]{3}$/.test(s)) {

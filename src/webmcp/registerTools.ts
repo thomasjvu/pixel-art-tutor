@@ -59,7 +59,14 @@ function defineTool<I extends Record<string, unknown>>(def: ToolDef<I>): WebMCP.
     description: def.description,
     inputSchema: def.inputSchema,
     annotations: def.annotations,
-    execute: (input) => def.execute(input as I),
+    execute: async (input) => {
+      try {
+        return await def.execute(input as I);
+      } catch (e) {
+        console.error(`[tool ${def.name}] threw`, e);
+        return { ok: false, error: e instanceof Error ? e.message : "internal tool error" };
+      }
+    },
   };
 }
 
@@ -230,10 +237,10 @@ export function registerTutorTools(): AbortController {
       inputSchema: {
         type: "object",
         properties: {
-          x: { type: "number" },
-          y: { type: "number" },
-          width: { type: "number" },
-          height: { type: "number" },
+          x: { type: "number", minimum: -64, maximum: 128 },
+          y: { type: "number", minimum: -64, maximum: 128 },
+          width: { type: "number", minimum: -64, maximum: 128 },
+          height: { type: "number", minimum: -64, maximum: 128 },
           color: colorSchemaProp,
           spriteId: { type: "string" },
           frameIndex: { type: "number" },
@@ -358,6 +365,13 @@ export function registerTutorTools(): AbortController {
       },
       execute: async ({ op, dx, dy, color, frameIndices, spriteId }) => {
         const st = useStore.getState();
+        if (
+          op === "shift" &&
+          ((dx !== undefined && (typeof dx !== "number" || !Number.isFinite(dx))) ||
+            (dy !== undefined && (typeof dy !== "number" || !Number.isFinite(dy))))
+        ) {
+          return { ok: false, error: "dx/dy must be finite numbers" };
+        }
         let colorIdx: number | undefined;
         if (op === "outline") {
           if (typeof color === "number") colorIdx = Math.round(color);
@@ -418,7 +432,11 @@ export function registerTutorTools(): AbortController {
         const st = useStore.getState();
         function resolve(c: number | string | null): { index: number } | { error: string } {
           if (c === null || c === "transparent") return { index: TRANSPARENT };
-          if (typeof c === "number") return { index: c };
+          if (typeof c === "number") {
+            if (!Number.isInteger(c) || c < -1 || c >= st.project.palette.length)
+              return { error: "color index out of range" };
+            return { index: c };
+          }
           const hex = normalizeHex(c);
           if (!hex) return { error: `invalid color '${c}'` };
           const found = st.project.palette.indexOf(hex);
@@ -666,10 +684,10 @@ export function registerTutorTools(): AbortController {
       inputSchema: {
         type: "object",
         properties: {
-          x: { type: "number" },
-          y: { type: "number" },
-          width: { type: "number" },
-          height: { type: "number" },
+          x: { type: "number", minimum: -64, maximum: 128 },
+          y: { type: "number", minimum: -64, maximum: 128 },
+          width: { type: "number", minimum: -64, maximum: 128 },
+          height: { type: "number", minimum: -64, maximum: 128 },
           tileId: { anyOf: [{ type: "string" }, { type: "null" }] },
         },
         required: ["x", "y", "width", "height"],

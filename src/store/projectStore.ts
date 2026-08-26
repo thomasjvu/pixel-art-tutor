@@ -4,6 +4,7 @@ import { TRANSPARENT } from "../types";
 import { normalizeHex } from "../engine/color";
 import {
   bresenhamLine,
+  clampRect,
   emptyPixels,
   floodFill,
   flipH,
@@ -218,7 +219,10 @@ export const useStore = create<ProjectState>()((set, get) => {
       for (const ch of changes) {
         let colorIdx: number;
         if (ch.color === null || ch.color === "transparent") colorIdx = TRANSPARENT;
-        else if (typeof ch.color === "number") colorIdx = ch.color;
+        else if (typeof ch.color === "number") {
+          if (!Number.isInteger(ch.color) || ch.color < -1 || ch.color >= next.palette.length) continue;
+          colorIdx = ch.color;
+        }
         else {
           const hex = normalizeHex(ch.color);
           if (!hex) continue;
@@ -249,17 +253,18 @@ export const useStore = create<ProjectState>()((set, get) => {
       const { sprite, frameIndex: fi } = t;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const r = clampRect(x, y, w, h, target.width, target.height);
+      if (!r) return 0;
       const fis = allFrames ? target.frames.map((_, i) => i) : [fi];
       let count = 0;
       for (const idx of fis) {
         const frame = target.frames[idx];
         if (!frame) continue;
-        for (let yy = y; yy < y + h; yy++)
-          for (let xx = x; xx < x + w; xx++)
-            if (inBounds(xx, yy, target.width, target.height)) {
-              frame.pixels[yy * target.width + xx] = colorIdx;
-              count++;
-            }
+        for (let yy = r.y; yy < r.y + r.h; yy++)
+          for (let xx = r.x; xx < r.x + r.w; xx++) {
+            frame.pixels[yy * target.width + xx] = colorIdx;
+            count++;
+          }
       }
       if (count > 0) commit(next);
       return count;
@@ -533,11 +538,12 @@ export const useStore = create<ProjectState>()((set, get) => {
       const tm = project.tilemap;
       if (!tm) return 0;
       if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId)) return 0;
+      const r = clampRect(x, y, w, h, tm.cols, tm.rows);
+      if (!r) return 0;
       const next = cloneProject(project);
       let count = 0;
-      for (let yy = y; yy < y + h; yy++)
-        for (let xx = x; xx < x + w; xx++) {
-          if (!inBounds(xx, yy, tm.cols, tm.rows)) continue;
+      for (let yy = r.y; yy < r.y + r.h; yy++)
+        for (let xx = r.x; xx < r.x + r.w; xx++) {
           next.tilemap!.cells[yy * tm.cols + xx] = spriteId;
           count++;
         }
