@@ -102,7 +102,10 @@ function spriteFromRows(
   kind: Sprite["kind"],
   rows: string[],
 ): Sprite {
-  const { pixels, width, height } = rowsToPixels(rows, DEFAULT_PALETTE);
+  const { pixels, width, height, errors } = rowsToPixels(rows);
+  if (errors.length > 0) {
+    throw new Error(`seed sprite '${name}' has malformed rows: ${errors.join("; ")}`);
+  }
   return {
     id,
     name,
@@ -120,10 +123,25 @@ function spriteFromRows(
 }
 
 export function createStarterProject(): Project {
-  const slime = spriteFromRows("sprite-slime", "Slime", "character", SLIME_FRAME_1);
-  const slimeF1 = SLIME_FRAME_2;
-  const parsed2 = rowsToPixels(slimeF1, DEFAULT_PALETTE);
-  slime.frames[1].pixels = parsed2.pixels;
+  const f0 = rowsToPixels(SLIME_FRAME_1);
+  if (f0.errors.length > 0) {
+    throw new Error(`seed sprite 'Slime' has malformed rows: ${f0.errors.join("; ")}`);
+  }
+  const f1 = rowsToPixels(SLIME_FRAME_2);
+  if (f1.errors.length > 0) {
+    throw new Error(`seed sprite 'Slime' has malformed rows: ${f1.errors.join("; ")}`);
+  }
+  const slime: Sprite = {
+    id: "sprite-slime",
+    name: "Slime",
+    width: f0.width,
+    height: f0.height,
+    kind: "character",
+    frames: [
+      { id: "sprite-slime-f0", pixels: f0.pixels },
+      { id: "sprite-slime-f1", pixels: f1.pixels },
+    ],
+  };
 
   const grass = spriteFromRows("tile-grass", "Grass", "tile", GRASS_TILE);
   const dirt = spriteFromRows("tile-dirt", "Dirt", "tile", DIRT_TILE);

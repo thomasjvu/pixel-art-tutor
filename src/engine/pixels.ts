@@ -1,5 +1,4 @@
 import { TRANSPARENT } from "../types";
-import { luminance, normalizeHex } from "./color";
 
 export function emptyPixels(w: number, h: number): number[] {
   return new Array(w * h).fill(TRANSPARENT);
@@ -145,7 +144,6 @@ export function pixelsToRowsWithWidth(pixels: number[], w: number): string[] {
 /** parse ASCII rows into pixels. unknown chars -> TRANSPARENT. autoAdd adds hex colors via callback and returns mapping */
 export function rowsToPixels(
   rows: string[],
-  palette: string[],
 ): { pixels: number[]; width: number; height: number; errors: string[] } {
   const errors: string[] = [];
   const height = rows.length;
@@ -167,19 +165,5 @@ export function rowsToPixels(
       } else pixels.push(idx);
     }
   }
-  void palette;
   return { pixels, width, height, errors };
-}
-
-export function darkestIndex(palette: string[], used: Set<number>): number | null {
-  let best: number | null = null;
-  let bestLuma = Infinity;
-  for (const i of used) {
-    const l = luminance(normalizeHex(palette[i]) ?? "#000000");
-    if (l < bestLuma) {
-      bestLuma = l;
-      best = i;
-    }
-  }
-  return best;
 }
