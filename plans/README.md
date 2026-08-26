@@ -19,8 +19,8 @@ the highest-value future test targets.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001 | Git init + initial commit | P1 | S | — | HISTORICAL DONE (`78aad52`) |
-| 002 | Housekeeping (package name, dead assets, seed errors) | P3 | S | 001 | HISTORICAL DONE; reconcile if retained |
-| 003 | Tooling baseline (typecheck script, CI, AGENTS.md) | P1 | S | 001 | PARTIAL; CI/current docs need reconciliation |
+| 002 | Housekeeping (package name, dead assets, seed errors) | P3 | S | 001 | DONE (`2fc412d`) |
+| 003 | Tooling baseline (typecheck script, CI, AGENTS.md) | P1 | S | 001 | DONE (`6a17d96`) |
 | 004 | Sanitize project JSON + ErrorBoundary | P1 | M | 001, 003 | TODO; reapply to current checkout |
 | 005 | Agent tool input hardening | P1 | S–M | 001, 003 | TODO; reapply to current checkout |
 | 006 | Store correctness batch | P1 | S | 001, 003 | TODO; reapply to current checkout |
