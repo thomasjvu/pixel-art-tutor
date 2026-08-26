@@ -22,7 +22,7 @@ the highest-value future test targets.
 | 002 | Housekeeping (package name, dead assets, seed errors) | P3 | S | 001 | DONE (`2fc412d`) |
 | 003 | Tooling baseline (typecheck script, CI, AGENTS.md) | P1 | S | 001 | DONE (`6a17d96`) |
 | 004 | Sanitize project JSON + ErrorBoundary | P1 | M | 001, 003 | DONE (`cd400d9`) |
-| 005 | Agent tool input hardening | P1 | S–M | 001, 003 | TODO; reapply to current checkout |
+| 005 | Agent tool input hardening | P1 | S–M | 001, 003 | DONE (`91e45f1`) |
 | 006 | Store correctness batch | P1 | S | 001, 003 | TODO; reapply to current checkout |
 | 007 | Stroke coalescing + pointer robustness + tilemap redraw | P2 | M | 001, 003 | TODO; reapply to current checkout |
 | 008 | Color resolution consolidation + atomic palette adds | P2 | M | 005 | TODO; reapply to current checkout |
