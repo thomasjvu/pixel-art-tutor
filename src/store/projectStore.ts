@@ -14,6 +14,7 @@ import {
   shiftWrap,
 } from "../engine/pixels";
 import { blankProject, createStarterProject } from "../engine/seed";
+import { sanitizeProject } from "../engine/validate";
 import type { ProjectChange } from "../realtime/projectEvents";
 
 export type TransformOp =
@@ -47,9 +48,7 @@ function loadStored(): Project | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Project;
-    if (parsed?.schemaVersion !== 1 || !Array.isArray(parsed.sprites)) return null;
-    return parsed;
+    return sanitizeProject(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -116,7 +115,7 @@ interface ProjectState {
 
   undo(): void;
   redo(): void;
-  loadProject(p: Project): void;
+  loadProject(p: unknown): { ok: true } | { ok: false; error: string };
   applyRoomProject(p: Project): boolean;
   resetProject(kind: "starter" | "blank"): void;
   exportProject(): string;
@@ -575,18 +574,26 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     loadProject(p) {
-      if (p.schemaVersion !== 1 || !Array.isArray(p.sprites) || !p.sprites.length) return;
-      commit(cloneProject(p), {
-        activeSpriteId: p.sprites[0].id,
+      const sanitized = sanitizeProject(p);
+      if (!sanitized) {
+        return {
+          ok: false,
+          error: "not a valid project file (expected schemaVersion 1 with sprites)",
+        };
+      }
+      commit(sanitized, {
+        activeSpriteId: sanitized.sprites[0].id,
         activeFrameIndex: 0,
         selectedTileId: null,
       });
+      return { ok: true };
     },
 
     applyRoomProject(p) {
-      if (p.schemaVersion !== 1 || !Array.isArray(p.sprites) || !p.sprites.length) return false;
+      const sanitized = sanitizeProject(p);
+      if (!sanitized) return false;
       const previousProject = get().project;
-      const project = cloneProject(p);
+      const project = sanitized;
       const active = project.sprites.find((sprite) => sprite.id === get().activeSpriteId) ?? project.sprites[0];
       set({
         project,

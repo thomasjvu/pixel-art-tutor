@@ -133,11 +133,15 @@ export function SpritesPanel() {
                 const file = e.target.files?.[0];
                 if (!file) return;
                 file.text().then((t) => {
+                  let parsed: unknown;
                   try {
-                    useStore.getState().loadProject(JSON.parse(t));
+                    parsed = JSON.parse(t);
                   } catch {
                     alert("That doesn't look like a valid project file.");
+                    return;
                   }
+                  const result = useStore.getState().loadProject(parsed);
+                  if (!result.ok) alert(`Could not import project: ${result.error}`);
                 });
                 e.target.value = "";
               }}

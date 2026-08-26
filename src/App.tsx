@@ -13,6 +13,7 @@ import { ProjectMenu } from "./components/ProjectMenu";
 import { StatusBar } from "./components/StatusBar";
 import { RoomBridge } from "./components/RoomBridge";
 import { RoomPanel } from "./components/RoomPanel";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { registerTutorTools } from "./webmcp/registerTools";
 import { useUi } from "./store/uiStore";
 import { useEditor } from "./store/editorStore";
@@ -31,7 +32,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "room", label: "Room", icon: "mingcute:group" },
 ];
 
-export default function App() {
+function AppContent() {
   const [tab, setTab] = useState<Tab>("sprites");
   const projectTitleRef = useRef<HTMLInputElement>(null);
   const mcpStatus = useUi((s) => s.mcpStatus);
@@ -229,5 +230,13 @@ export default function App() {
 
       <StatusBar />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 }
