@@ -15,7 +15,7 @@
 - **Depends on**: plans/001, 003, 005 (hardening conventions); plan 008 if landed
   (color helper) — otherwise follow 005's inline-resolution pattern
 - **Category**: direction
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `78aad52`, 2026-08-26 (historical branch plan; reapply to the current checkout)
 
 ## Why this matters
 

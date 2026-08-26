@@ -14,7 +14,7 @@
   mitigated by the repair-first policy below)
 - **Depends on**: plans/001-git-init.md (worktree base); plan 003 recommended (gates)
 - **Category**: bug / security
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `78aad52`, 2026-08-26 (historical branch plan; reapply to the current checkout)
 
 ## Why this matters
 

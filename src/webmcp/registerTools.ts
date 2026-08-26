@@ -5,6 +5,7 @@ import { TRANSPARENT } from "../types";
 import { normalizeHex } from "../engine/color";
 import { critiqueSprite } from "../engine/critique";
 import { pixelsToRowsWithWidth } from "../engine/pixels";
+import { animateAgentPixels, beginAgentAction, finishAgentAction, showAgentAction } from "../realtime/agentAnimation";
 
 const DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
 
@@ -14,6 +15,27 @@ function log(tool: string, summary: string) {
 
 function target(spriteId?: string, frameIndex?: number) {
   return useStore.getState().resolveTarget(spriteId, frameIndex);
+}
+
+function previewColor(color: PixelChange["color"], palette: string[]): string | null {
+  if (color === null || color === "transparent") return null;
+  if (typeof color === "number") return palette[Math.round(color)] ?? null;
+  return normalizeHex(color);
+}
+
+function previewCells(
+  changes: PixelChange[],
+  width: number,
+  height: number,
+  palette: string[],
+) {
+  return changes
+    .filter((change) => change.x >= 0 && change.y >= 0 && change.x < width && change.y < height)
+    .map((change) => ({
+      x: change.x,
+      y: change.y,
+      color: previewColor(change.color, palette),
+    }));
 }
 
 type TargetedInput = {
@@ -159,7 +181,7 @@ export function registerTutorTools(): AbortController {
         },
         required: ["pixels"],
       },
-      execute: ({ pixels, spriteId, frameIndex, allFrames }) => {
+      execute: async ({ pixels, spriteId, frameIndex, allFrames }) => {
         const t = target(spriteId, frameIndex);
         if ("error" in t) return { ok: false, error: t.error };
         const changes: PixelChange[] = pixels.slice(0, 4096).map((p) => ({
@@ -167,7 +189,18 @@ export function registerTutorTools(): AbortController {
           y: Math.round(p.y),
           color: p.color ?? null,
         }));
+        const actionId = beginAgentAction({
+          tool: "set_pixels",
+          spriteId: t.sprite.id,
+          frameIndex: t.frameIndex,
+          message: `Painting ${changes.length} pixel${changes.length === 1 ? "" : "s"} on ${t.sprite.name}`,
+        });
+        await animateAgentPixels(
+          actionId,
+          previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
+        );
         const res = useStore.getState().applyPixelChanges(changes, t.sprite.id, t.frameIndex, !!allFrames);
+        finishAgentAction(actionId, res.applied > 0 ? `Painted ${res.applied} pixel${res.applied === 1 ? "" : "s"}` : "No pixels changed");
         log("set_pixels", `${res.applied} px on ${t.sprite.name}`);
         return {
           ok: res.applied > 0,
@@ -208,7 +241,7 @@ export function registerTutorTools(): AbortController {
         },
         required: ["x", "y", "width", "height", "color"],
       },
-      execute: ({ x, y, width, height, color, spriteId, frameIndex, allFrames }) => {
+      execute: async ({ x, y, width, height, color, spriteId, frameIndex, allFrames }) => {
         const t = target(spriteId, frameIndex);
         if ("error" in t) return { ok: false, error: t.error };
         let colorIdx: number;
@@ -226,18 +259,40 @@ export function registerTutorTools(): AbortController {
             colorIdx = added.index;
           }
         }
+        const rx = Math.round(x);
+        const ry = Math.round(y);
+        const rw = Math.round(width);
+        const rh = Math.round(height);
+        const changes: PixelChange[] = [];
+        const left = Math.max(0, rx);
+        const top = Math.max(0, ry);
+        const right = Math.min(t.sprite.width, rx + Math.max(0, rw));
+        const bottom = Math.min(t.sprite.height, ry + Math.max(0, rh));
+        for (let yy = top; yy < bottom; yy++)
+          for (let xx = left; xx < right; xx++) changes.push({ x: xx, y: yy, color });
+        const actionId = beginAgentAction({
+          tool: "fill_region",
+          spriteId: t.sprite.id,
+          frameIndex: t.frameIndex,
+          message: `Filling ${changes.length} pixels on ${t.sprite.name}`,
+        });
+        await animateAgentPixels(
+          actionId,
+          previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
+        );
         const n = useStore
           .getState()
           .fillRegion(
-            Math.round(x),
-            Math.round(y),
-            Math.round(width),
-            Math.round(height),
+            rx,
+            ry,
+            rw,
+            rh,
             colorIdx,
             t.sprite.id,
             t.frameIndex,
             !!allFrames,
           );
+        finishAgentAction(actionId, n > 0 ? `Filled ${n} pixels` : "Nothing to fill");
         log("fill_region", `${n} px on ${t.sprite.name}`);
         return { ok: n > 0, filledPixels: n };
       },
@@ -254,10 +309,24 @@ export function registerTutorTools(): AbortController {
           frameIndex: { type: "number" },
         },
       },
-      execute: ({ spriteId, frameIndex }) => {
+      execute: async ({ spriteId, frameIndex }) => {
         const t = target(spriteId, frameIndex);
         if ("error" in t) return { ok: false, error: t.error };
+        const changes: PixelChange[] = [];
+        for (let y = 0; y < t.sprite.height; y++)
+          for (let x = 0; x < t.sprite.width; x++) changes.push({ x, y, color: null });
+        const actionId = beginAgentAction({
+          tool: "clear_frame",
+          spriteId: t.sprite.id,
+          frameIndex: t.frameIndex,
+          message: `Clearing ${t.sprite.name} frame ${t.frameIndex + 1}`,
+        });
+        await animateAgentPixels(
+          actionId,
+          previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
+        );
         useStore.getState().clearFrame(t.sprite.id, t.frameIndex);
+        finishAgentAction(actionId, "Frame cleared");
         log("clear_frame", `${t.sprite.name} frame ${t.frameIndex}`);
         return { ok: true };
       },
@@ -287,7 +356,7 @@ export function registerTutorTools(): AbortController {
         },
         required: ["op"],
       },
-      execute: ({ op, dx, dy, color, frameIndices, spriteId }) => {
+      execute: async ({ op, dx, dy, color, frameIndices, spriteId }) => {
         const st = useStore.getState();
         let colorIdx: number | undefined;
         if (op === "outline") {
@@ -305,6 +374,19 @@ export function registerTutorTools(): AbortController {
             }
           }
         }
+        const resolved = target(spriteId);
+        if ("error" in resolved) return { ok: false, error: resolved.error };
+        const actionId = beginAgentAction({
+          tool: "transform_sprite",
+          spriteId: resolved.sprite.id,
+          frameIndex: resolved.frameIndex,
+          message: `Applying ${op.replaceAll("_", " ")} to ${resolved.sprite.name}`,
+          status: "transforming",
+        });
+        await showAgentAction(actionId, {
+          x: Math.floor(resolved.sprite.width / 2),
+          y: Math.floor(resolved.sprite.height / 2),
+        });
         const err = st.transform(op, {
           dx: typeof dx === "number" ? Math.round(dx) : undefined,
           dy: typeof dy === "number" ? Math.round(dy) : undefined,
@@ -312,6 +394,7 @@ export function registerTutorTools(): AbortController {
           frameIndices: Array.isArray(frameIndices) ? frameIndices : undefined,
           spriteId,
         });
+        finishAgentAction(actionId, err ? `Could not apply ${op.replaceAll("_", " ")}` : `${op.replaceAll("_", " ")} complete`);
         log("transform_sprite", `${op}${err ? " failed" : ""}`);
         return err ? { ok: false, error: err } : { ok: true };
       },
@@ -331,7 +414,7 @@ export function registerTutorTools(): AbortController {
         },
         required: ["from", "to"],
       },
-      execute: ({ from, to, spriteId }) => {
+      execute: async ({ from, to, spriteId }) => {
         const st = useStore.getState();
         function resolve(c: number | string | null): { index: number } | { error: string } {
           if (c === null || c === "transparent") return { index: TRANSPARENT };
@@ -347,7 +430,21 @@ export function registerTutorTools(): AbortController {
         if ("error" in fromR) return { ok: false, error: `from: ${fromR.error}` };
         const toR = resolve(to);
         if ("error" in toR) return { ok: false, error: `to: ${toR.error}` };
+        const resolved = target(spriteId);
+        if ("error" in resolved) return { ok: false, error: resolved.error };
+        const actionId = beginAgentAction({
+          tool: "replace_color",
+          spriteId: resolved.sprite.id,
+          frameIndex: resolved.frameIndex,
+          message: `Remapping colors in ${spriteId ? resolved.sprite.name : "the project"}`,
+          status: "transforming",
+        });
+        await showAgentAction(actionId, {
+          x: Math.floor(resolved.sprite.width / 2),
+          y: Math.floor(resolved.sprite.height / 2),
+        });
         const n = st.replaceColor(fromR.index, toR.index, spriteId);
+        finishAgentAction(actionId, `Remapped ${n} pixel${n === 1 ? "" : "s"}`);
         log("replace_color", `${n} px remapped`);
         return { ok: true, replacedPixels: n };
       },
@@ -362,9 +459,22 @@ export function registerTutorTools(): AbortController {
         properties: { hex: { type: "string", description: "e.g. '#ffcd75'" } },
         required: ["hex"],
       },
-      execute: ({ hex }) => {
+      execute: async ({ hex }) => {
+        const active = useStore.getState().activeSprite();
+        const actionId = beginAgentAction({
+          tool: "add_palette_color",
+          spriteId: active?.id ?? null,
+          frameIndex: 0,
+          message: `Adding ${hex} to the palette`,
+          status: "thinking",
+        });
+        await showAgentAction(actionId, active ? { x: 0, y: 0 } : null);
         const r = useStore.getState().addPaletteColor(hex);
-        if ("error" in r) return { ok: false, error: r.error };
+        if ("error" in r) {
+          finishAgentAction(actionId, r.error);
+          return { ok: false, error: r.error };
+        }
+        finishAgentAction(actionId, `Added palette color ${r.index}`);
         log("add_palette_color", hex);
         return { ok: true, index: r.index, hex: normalizeHex(hex) };
       },
@@ -383,8 +493,22 @@ export function registerTutorTools(): AbortController {
         },
         required: ["spriteId"],
       },
-      execute: ({ spriteId, frameIndex }) => {
+      execute: async ({ spriteId, frameIndex }) => {
+        const resolved = target(spriteId, frameIndex);
+        if ("error" in resolved) return { ok: false, error: resolved.error };
+        const actionId = beginAgentAction({
+          tool: "set_active_sprite",
+          spriteId: resolved.sprite.id,
+          frameIndex: resolved.frameIndex,
+          message: `Showing ${resolved.sprite.name}`,
+          status: "thinking",
+        });
+        await showAgentAction(actionId, {
+          x: Math.floor(resolved.sprite.width / 2),
+          y: Math.floor(resolved.sprite.height / 2),
+        });
         const ok = useStore.getState().setActiveSprite(spriteId ?? "", frameIndex);
+        finishAgentAction(actionId, ok ? `Showing ${resolved.sprite.name}` : `${spriteId} not found`);
         log("set_active_sprite", ok ? `${spriteId}` : `${spriteId} not found`);
         return ok ? { ok: true } : { ok: false, error: `sprite '${spriteId}' not found` };
       },
@@ -402,9 +526,26 @@ export function registerTutorTools(): AbortController {
           copyFrameIndex: { type: "number", description: "Frame to duplicate. Defaults to the last frame." },
         },
       },
-      execute: ({ spriteId, copyFrameIndex }) => {
+      execute: async ({ spriteId, copyFrameIndex }) => {
+        const resolved = target(spriteId);
+        if ("error" in resolved) return { ok: false, error: resolved.error };
+        const actionId = beginAgentAction({
+          tool: "add_frame",
+          spriteId: resolved.sprite.id,
+          frameIndex: resolved.frameIndex,
+          message: `Duplicating a frame on ${resolved.sprite.name}`,
+          status: "drawing",
+        });
+        await showAgentAction(actionId, {
+          x: Math.floor(resolved.sprite.width / 2),
+          y: Math.floor(resolved.sprite.height / 2),
+        });
         const idx = useStore.getState().addFrame(spriteId, copyFrameIndex);
-        if (idx < 0) return { ok: false, error: "could not add frame" };
+        if (idx < 0) {
+          finishAgentAction(actionId, "Could not add frame");
+          return { ok: false, error: "could not add frame" };
+        }
+        finishAgentAction(actionId, `Added frame ${idx + 1}`);
         log("add_frame", `frame ${idx}`);
         return { ok: true, newIndex: idx };
       },
@@ -436,8 +577,17 @@ export function registerTutorTools(): AbortController {
         },
         required: ["name", "width", "height", "kind"],
       },
-      execute: ({ name, width, height, kind, copyFromId }) => {
+      execute: async ({ name, width, height, kind, copyFromId }) => {
+        const actionId = beginAgentAction({
+          tool: "add_sprite",
+          spriteId: null,
+          frameIndex: 0,
+          message: `Creating ${name || "a new sprite"}`,
+          status: "thinking",
+        });
+        await showAgentAction(actionId);
         const id = useStore.getState().addSprite({ name, width, height, kind, copyFromId });
+        finishAgentAction(actionId, `Created ${name || "new sprite"}`);
         log("add_sprite", `${name} (${kind})`);
         return { ok: true, spriteId: id };
       },
@@ -491,9 +641,18 @@ export function registerTutorTools(): AbortController {
         },
         required: ["x", "y"],
       },
-      execute: ({ x, y, tileId }) => {
+      execute: async ({ x, y, tileId }) => {
         const id = !tileId || tileId === "empty" ? null : tileId;
+        const actionId = beginAgentAction({
+          tool: "place_tile",
+          spriteId: null,
+          frameIndex: 0,
+          message: `Placing a tile at ${Math.round(x)}, ${Math.round(y)}`,
+          status: "drawing",
+        });
+        await showAgentAction(actionId);
         const ok = useStore.getState().placeTile(Math.round(x), Math.round(y), id);
+        finishAgentAction(actionId, ok ? "Tile placed" : "Could not place tile");
         log("place_tile", ok ? `(${x},${y})` : `failed (${x},${y})`);
         return ok ? { ok: true } : { ok: false, error: "out of bounds, no tilemap, or unknown tileId" };
       },
@@ -515,11 +674,20 @@ export function registerTutorTools(): AbortController {
         },
         required: ["x", "y", "width", "height"],
       },
-      execute: ({ x, y, width, height, tileId }) => {
+      execute: async ({ x, y, width, height, tileId }) => {
         const id = !tileId || tileId === "empty" ? null : tileId;
+        const actionId = beginAgentAction({
+          tool: "fill_tiles",
+          spriteId: null,
+          frameIndex: 0,
+          message: `Filling a map region`,
+          status: "filling",
+        });
+        await showAgentAction(actionId);
         const n = useStore
           .getState()
           .fillTiles(Math.round(x), Math.round(y), Math.round(width), Math.round(height), id);
+        finishAgentAction(actionId, n > 0 ? `Filled ${n} map cells` : "Nothing to fill");
         log("fill_tiles", `${n} cells`);
         return n > 0 ? { ok: true, cells: n } : { ok: false, error: "nothing filled (no tilemap or bad args)" };
       },
@@ -535,11 +703,23 @@ export function registerTutorTools(): AbortController {
         properties: { spriteId: { type: "string", description: "Defaults to the active sprite." } },
       },
       annotations: { readOnlyHint: true },
-      execute: ({ spriteId }) => {
+      execute: async ({ spriteId }) => {
         const st = useStore.getState();
         const t = st.resolveTarget(spriteId);
         if ("error" in t) return { ok: false, error: t.error };
+        const actionId = beginAgentAction({
+          tool: "critique_artwork",
+          spriteId: t.sprite.id,
+          frameIndex: t.frameIndex,
+          message: `Looking closely at ${t.sprite.name}`,
+          status: "reviewing",
+        });
+        await showAgentAction(actionId, {
+          x: Math.floor(t.sprite.width / 2),
+          y: Math.floor(t.sprite.height / 2),
+        });
         const report = critiqueSprite(t.sprite, st.project.palette);
+        finishAgentAction(actionId, `Score ${report.score}/100`);
         log("critique_artwork", `${t.sprite.name}: ${report.score}/100`);
         return { ok: true, report };
       },

@@ -13,7 +13,7 @@
 - **Risk**: MED (touches the hot write path shared by human UI and agent tools)
 - **Depends on**: plans/001-git-init.md; plan 003 (gates) recommended
 - **Category**: perf / bug
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `78aad52`, 2026-08-26 (historical branch plan; reapply to the current checkout)
 
 ## Why this matters
 
@@ -42,6 +42,7 @@ repainting fully per painted cell during drags.
       ...extra,
     });
     scheduleSave();
+    notifyProjectChange({ project: next, previousProject: project, source: "local", label: "Edit" });
   }
   ```
 - `src/components/CanvasStage.tsx:20` — `const [dragging, setDragging] = useState(false);`
@@ -57,10 +58,12 @@ repainting fully per painted cell during drags.
     return () => clearInterval(id);
   }, [playing, sprite]);
   ```
-- `src/components/CanvasStage.tsx` pointer handlers (around 143-190):
+- `src/components/CanvasStage.tsx` pointer handlers (around 209-243):
   `onPointerDown` sets `setDragging(true)` + `applyAt`; `onPointerMove` guards with
   `if (!dragging || !cell) return;` and calls `drawLine(...)` per segment;
-  `onPointerUp` clears; there is **no** `onPointerCancel`.
+  `onPointerUp` and `onPointerCancel` clear the current pointer state. The
+  cancel handler is already present in the current worktree; retain it while
+  adding stroke history boundaries.
 - `src/components/TilemapPanel.tsx:33-66` — the draw effect loops all cells and for
   non-empty cells does `const sprite = project.sprites.find((sp) => sp.id === id);`;
   painting handlers (`onPointerDown`/`onPointerMove`) call `placeTile` per cell —
@@ -102,22 +105,25 @@ repainting fully per painted cell during drags.
 
 ## Steps
 
-### Step 1: Add stroke coalescing to the store
+### Step 1: Add stroke coalescing to the store without breaking room events
 
 In `src/store/projectStore.ts`, inside the `create` closure (next to `commit`), add
-a module-closure-local flag and two actions:
+a module-closure-local flag and a base-project reference:
 
 ```ts
 let strokeActive = false;
+let strokeBaseProject: Project | null = null;
 ```
 
-Change `commit` to skip history while a stroke is active:
+Change `commit` to skip intermediate history entries, localStorage writes, and
+room notifications while a stroke is active. It must still install every
+intermediate `next` project so the canvas remains live:
+
 ```ts
 function commit(next: Project, extra?: Partial<ProjectState>) {
   const { project, past } = get();
   if (strokeActive) {
-    // history base was already pushed by beginStroke; intermediate
-    // states are not recorded
+    // history and the room event are finalized once at endStroke
     set({ project: next, ...extra });
     return;
   }
@@ -128,28 +134,46 @@ function commit(next: Project, extra?: Partial<ProjectState>) {
     ...extra,
   });
   scheduleSave();
+  notifyProjectChange({ project: next, previousProject: project, source: "local", label: "Edit" });
 }
 ```
 
 Add to the `ProjectState` interface and implementation:
 ```ts
 beginStroke(): void;
-endStroke(): void;
+endStroke(label?: string): void;
 ```
 ```ts
 beginStroke() {
   if (strokeActive) return;
   const { project, past } = get();
+  strokeBaseProject = project;
   strokeActive = true;
   set({ past: [...past.slice(-HISTORY_LIMIT), project], future: [] });
 },
 
-endStroke() {
+endStroke(label = "Paint stroke") {
   if (!strokeActive) return;
   strokeActive = false;
+  const previousProject = strokeBaseProject;
+  strokeBaseProject = null;
   scheduleSave();
+  if (previousProject) {
+    notifyProjectChange({
+      project: get().project,
+      previousProject,
+      source: "local",
+      label,
+    });
+  }
 },
 ```
+
+The exact placement may use the repository's current function formatting, but
+the invariants are mandatory: one history base is pushed at begin, intermediate
+commits remain visible but do not notify the room, and exactly one final
+`ProjectChange` contains the pre-stroke and post-stroke snapshots. Agent tools
+never call these actions and keep their existing one-operation notifications.
 
 **Verify**: `npx tsc -b --pretty false` → exit 0.
 
@@ -158,10 +182,10 @@ endStroke() {
 In `src/components/CanvasStage.tsx`:
 - Replace `const [dragging, setDragging] = useState(false);` with
   `const dragging = useRef(false);`
-- `onPointerDown`: replace `setDragging(true)` with
-  `dragging.current = true; useStore.getState().beginStroke();` (keep
-  `lastCell.current = cell;` and `applyAt(cell, erase)`; note `applyAt` for the
-  fill/picker tools should NOT be wrapped in a stroke — see below).
+- `onPointerDown`: replace `setDragging(true)` with `dragging.current = true`.
+  Call `useStore.getState().beginStroke()` only for pencil/eraser after a valid
+  cell is found and before `applyAt`; fill/picker must not be wrapped in a
+  stroke.
 - `onPointerMove`: change the guard to
   ```ts
   if (!dragging.current || !cell) return;
@@ -178,14 +202,8 @@ In `src/components/CanvasStage.tsx`:
   lastCell.current = null;
   useStore.getState().endStroke();
   ```
-- Add a new handler next to `onPointerUp`:
-  ```ts
-  onPointerCancel={() => {
-    dragging.current = false;
-    lastCell.current = null;
-    useStore.getState().endStroke();
-  }}
-  ```
+- Keep the existing `onPointerCancel` handler and make it clear the ref and call
+  `endStroke()`, exactly like `onPointerUp`. Do not add a second cancel handler.
 - The fill tool fires only in `applyAt` on pointerdown (a single commit). To keep
   fill as ONE normal history entry, make `onPointerDown` call `beginStroke()` ONLY
   for pencil/eraser:
@@ -232,8 +250,10 @@ Re-read your diff and confirm each of these holds (state each in NOTES):
 2. A 30-segment drag = exactly ONE new history entry.
 3. Fill tool = exactly ONE history entry (normal commit path, no beginStroke).
 4. Agent tool calls (not touched here) still produce one entry each.
-5. Undo after a stroke restores the pre-stroke canvas; redo re-applies it.
-6. `endStroke` without a preceding `beginStroke` is a safe no-op.
+5. Room subscribers receive one final local `ProjectChange` per stroke, not one
+   event per pointer cell.
+6. Undo after a stroke restores the pre-stroke canvas; redo re-applies it.
+7. `endStroke` without a preceding `beginStroke` is a safe no-op.
 
 **Verify**: `git diff` read in full; gates re-run → exit 0.
 

@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store/projectStore";
 import { useEditor } from "../store/editorStore";
+import { useUi, type AgentPresenceState } from "../store/uiStore";
+import type { RoomPresence } from "../realtime/protocol";
 import { TRANSPARENT } from "../types";
 
 export function CanvasStage() {
@@ -11,14 +13,39 @@ export function CanvasStage() {
   const floodFillAt = useStore((s) => s.floodFillAt);
   const selectFrame = useStore((s) => s.selectFrame);
 
-  const { tool, colorIdx, zoom, onion, playing } = useEditor();
+  const { tool, colorIdx, zoom, onion, showGrid, fps, playing } = useEditor();
   const setColor = useEditor((s) => s.setColor);
   const setPlaying = useEditor((s) => s.setPlaying);
 
   const sprite = useStore((s) => s.activeSprite());
+  const agentPresence = useUi((s) => s.agentPresence);
+  const roomPeers = useUi((s) => s.roomPeers);
+  const remotePeers = Object.values(roomPeers);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [canvasBox, setCanvasBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const lastCell = useRef<[number, number] | null>(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = canvas?.parentElement;
+    if (!canvas || !wrap) return;
+    const updateBox = () => {
+      const canvasRect = canvas.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      setCanvasBox({
+        left: canvasRect.left - wrapRect.left,
+        top: canvasRect.top - wrapRect.top,
+        width: canvasRect.width,
+        height: canvasRect.height,
+      });
+    };
+    updateBox();
+    const observer = new ResizeObserver(updateBox);
+    observer.observe(canvas);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [sprite, zoom]);
 
   // play mode: advance frames
   useEffect(() => {
@@ -26,9 +53,9 @@ export function CanvasStage() {
     const id = setInterval(() => {
       const st = useStore.getState();
       st.selectFrame((st.activeFrameIndex + 1) % (sprite.frames.length));
-    }, 220);
+    }, 1000 / fps);
     return () => clearInterval(id);
-  }, [playing, sprite]);
+  }, [playing, sprite, fps]);
 
   useEffect(() => {
     if (!playing && sprite && activeFrameIndex > sprite.frames.length - 1) selectFrame(0);
@@ -41,9 +68,9 @@ export function CanvasStage() {
     const c = document.createElement("canvas");
     c.width = c.height = zoom;
     const cx = c.getContext("2d")!;
-    cx.fillStyle = "#232733";
+    cx.fillStyle = "#e8e5dc";
     cx.fillRect(0, 0, zoom, zoom);
-    cx.fillStyle = "#2a2f3d";
+    cx.fillStyle = "#d8d5cc";
     cx.fillRect(0, 0, Math.ceil(zoom / 2), Math.ceil(zoom / 2));
     cx.fillRect(Math.ceil(zoom / 2), Math.ceil(zoom / 2), Math.ceil(zoom / 2), Math.ceil(zoom / 2));
     return c;
@@ -88,7 +115,28 @@ export function CanvasStage() {
         ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
       }
 
-    if (zoom >= 10) {
+    const preview =
+      agentPresence?.spriteId === sprite.id && agentPresence.frameIndex === activeFrameIndex
+        ? agentPresence.preview
+        : [];
+    if (preview.length) {
+      ctx.globalAlpha = 0.78;
+      for (const cell of preview) {
+        if (cell.x < 0 || cell.y < 0 || cell.x >= sprite.width || cell.y >= sprite.height) continue;
+        if (cell.color === null) {
+          if (pattern) {
+            ctx.fillStyle = pattern;
+            ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+          }
+        } else {
+          ctx.fillStyle = cell.color;
+          ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (showGrid && zoom >= 10) {
       ctx.strokeStyle = "rgba(255,255,255,0.06)";
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -104,7 +152,7 @@ export function CanvasStage() {
       ctx.strokeStyle = "rgba(255,255,255,0.25)";
       ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
     }
-  }, [sprite, project.palette, activeFrameIndex, zoom, onion, checker]);
+  }, [sprite, project.palette, activeFrameIndex, zoom, onion, showGrid, checker, agentPresence]);
 
   function cellFromEvent(e: React.PointerEvent<HTMLCanvasElement>): [number, number] | null {
     const canvas = canvasRef.current;
@@ -138,12 +186,20 @@ export function CanvasStage() {
 
   return (
     <div className="stage">
+      <div className="stage-header">
+        <div>
+          <span className="eyebrow">Canvas</span>
+          <strong>{sprite.name}</strong>
+        </div>
+        <span className="stage-size">{sprite.width} × {sprite.height} px</span>
+      </div>
       <div className="stage-canvas-wrap">
         <canvas
           ref={canvasRef}
           width={width}
           height={height}
           className="stage-canvas"
+          aria-label={`${sprite.name} pixel canvas`}
           style={{
             imageRendering: "pixelated",
             cursor:
@@ -179,30 +235,86 @@ export function CanvasStage() {
             setDragging(false);
             lastCell.current = null;
           }}
+          onPointerCancel={() => {
+            setDragging(false);
+            lastCell.current = null;
+          }}
           onPointerLeave={() => useEditor.getState().setHover(null)}
         />
-      </div>
-      <div className="stage-hud">
-        <button
-          className={playing ? "hud-btn active" : "hud-btn"}
-          disabled={sprite.frames.length < 2}
-          onClick={() => setPlaying(!playing)}
-          title="Preview animation"
+        <div
+          className="canvas-agent-overlay"
+          aria-hidden="true"
+          style={{
+            left: `${canvasBox.left}px`,
+            top: `${canvasBox.top}px`,
+            width: `${canvasBox.width}px`,
+            height: `${canvasBox.height}px`,
+            ["--cell-width" as string]: `${100 / sprite.width}%`,
+            ["--cell-height" as string]: `${100 / sprite.height}%`,
+          }}
         >
-          {playing ? "Pause" : "Play"}
-        </button>
-        <span className="hud-info">
-          {sprite.name} · {sprite.width}×{sprite.height} · frame{" "}
-          {Math.min(activeFrameIndex + 1, sprite.frames.length)}/{sprite.frames.length}
+          {agentPresence && agentPresence.spriteId === sprite.id && agentPresence.frameIndex === activeFrameIndex && (
+            <AgentCursor presence={agentPresence} sprite={sprite} />
+          )}
+          {remotePeers
+            .filter((peer) => peer.spriteId === sprite.id && peer.frameIndex === activeFrameIndex)
+            .map((peer) => <AgentCursor key={peer.id} presence={peer} sprite={sprite} />)}
+        </div>
+      </div>
+      <div className="stage-footer">
+        <span className="stage-frame-readout">
+          Frame <strong>{Math.min(activeFrameIndex + 1, sprite.frames.length)}</strong> / {sprite.frames.length}
         </span>
-        <button
-          className={onion ? "hud-btn active" : "hud-btn"}
-          onClick={() => useEditor.getState().toggleOnion()}
-          title="Onion skin (ghost previous frame)"
-        >
-          Onion
-        </button>
+        <span className="stage-hint">{showGrid ? "Grid on" : "Grid off"} · {fps} fps</span>
+        <div className="stage-actions">
+          <button
+            className={onion ? "hud-btn active" : "hud-btn"}
+            onClick={() => useEditor.getState().toggleOnion()}
+            title="Onion skin (ghost previous frame)"
+          >
+            Onion
+          </button>
+          <button
+            className={playing ? "hud-btn active" : "hud-btn"}
+            disabled={sprite.frames.length < 2}
+            onClick={() => setPlaying(!playing)}
+            title="Preview animation"
+          >
+            {playing ? "Pause" : "Preview"}
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+type CursorPresence = Pick<RoomPresence, "id" | "name" | "kind" | "color" | "status" | "cursor" | "progress" | "message"> & {
+  spriteId: string | null;
+  frameIndex: number;
+};
+
+function AgentCursor({ presence, sprite }: { presence: CursorPresence | AgentPresenceState; sprite: { id: string; width: number; height: number } }) {
+  if (!presence.cursor) return null;
+  const left = ((presence.cursor.x + 0.5) / sprite.width) * 100;
+  const top = ((presence.cursor.y + 0.5) / sprite.height) * 100;
+  const status = presence.status === "idle" ? "" : presence.status;
+  return (
+    <div
+      className={`canvas-agent-cursor ${("kind" in presence && presence.kind === "agent") || "actionId" in presence ? "agent" : "human"}`}
+      style={{
+        left: `${left}%`,
+        top: `${top}%`,
+        ["--cursor-color" as string]: "color" in presence ? presence.color : "#e95d55",
+        ["--cursor-width" as string]: `${100 / sprite.width}%`,
+        ["--cursor-height" as string]: `${100 / sprite.height}%`,
+      }}
+    >
+      <span className="canvas-agent-cell" />
+      <span className="canvas-agent-label">
+        <i />
+        {presence.name}
+        {status && <small>{status}</small>}
+      </span>
     </div>
   );
 }

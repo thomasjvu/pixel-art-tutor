@@ -27,6 +27,14 @@ This is genuine human-agent collaboration: shared state, shared tools, one canva
   one app.
 - **World building**: agents create tiles (`add_sprite` with kind `tile`), read the map as ASCII
   (`get_tilemap`), and paint regions (`place_tile`, `fill_tiles`) while you paint manually.
+- **Studio workflow**: a persistent cel timeline keeps animation frames, onion skin, playback FPS,
+  and frame stepping one click away while the inspector keeps sprites, palette, map, tutor, and
+  agent windows together.
+- **Game-engine handoff**: import PNG/WebP/JPEG art as a palette-backed sprite, export native PNGs
+  or horizontal sheets, and download ready-to-drop Godot `.tres` or Unity `.meta` integration files
+  alongside the sheet.
+- **Live rooms**: open the Room panel to create a shareable room. People see each other's pixel
+  cursors, and Pixel Bot's animated drawing cursor follows WebMCP actions in real time.
 
 ## The WebMCP implementation
 
@@ -88,6 +96,21 @@ The app is fully functional standalone. To give an agent access:
 - Optionally install the [Model Context Tool Inspector](https://chromewebstore.google.com/detail/model-context-tool-inspec/gbpdfapgefenggkahomfgkhfehlcenpd)
   extension to call tools by hand.
 
+### Shared rooms
+
+The app still works as a local-only editor. For live rooms, run the Vite app and the Cloudflare
+Durable Object room server in separate terminals:
+
+```bash
+npm run room:dev                                             # http://127.0.0.1:1999
+VITE_PARTY_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1
+```
+
+Open the Vite URL, choose **Room**, create a room, and share its URL. The server stores the latest
+project snapshot and recent edit history, broadcasts presence over WebSockets, merges non-conflicting
+pixel edits, and only allows a collaborator to undo their latest room operation. Deploy the room
+worker with `npm run room:deploy`, then set `VITE_PARTY_HOST` to its HTTPS host for production.
+
 ### Example prompts to try
 
 - *"Read my slime sprite and critique it, then fix the issues you find."*
@@ -97,9 +120,10 @@ The app is fully functional standalone. To give an agent access:
 
 ## Tech
 
-React 19 · Vite · TypeScript · zustand · zero backend — all state is client-side, persisted to
-`localStorage`. Typed against the official [`webmcp-types`](https://www.npmjs.com/package/webmcp-types)
-package.
+React 19 · Vite · TypeScript · zustand · PartySocket · PartyServer · Cloudflare Durable Objects.
+Local projects are persisted to `localStorage`; shared rooms persist their canonical snapshot and
+recent history in the room server. Typed against the official
+[`webmcp-types`](https://www.npmjs.com/package/webmcp-types) package.
 
 ## License
 

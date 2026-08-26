@@ -15,7 +15,7 @@
 - **Depends on**: plans/004 (sanitizeProject + result-returning `loadProject`) —
   HARD dependency; plans/001, 003
 - **Category**: direction
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `78aad52`, 2026-08-26 (historical branch plan; reapply to the current checkout)
 
 ## Why this matters
 

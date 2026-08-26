@@ -15,7 +15,7 @@
 - **Depends on**: plans/005-tool-input-hardening.md (builds on its range-check
   semantics); plans/001, 003
 - **Category**: tech-debt
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `78aad52`, 2026-08-26 (historical branch plan; reapply to the current checkout)
 
 ## Why this matters
 

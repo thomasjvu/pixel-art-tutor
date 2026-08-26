@@ -32,7 +32,7 @@ export function TilemapPanel() {
       for (let x = 0; x < tm.cols; x++) {
         const id = tm.cells[y * tm.cols + x];
         // cell background
-        ctx.fillStyle = (x + y) % 2 === 0 ? "#232733" : "#262b39";
+        ctx.fillStyle = (x + y) % 2 === 0 ? "#e8e5dc" : "#d8d5cc";
         ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
         if (!id) continue;
         const sprite = project.sprites.find((sp) => sp.id === id);
@@ -52,7 +52,7 @@ export function TilemapPanel() {
             );
           }
       }
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.strokeStyle = "rgba(40,50,74,0.12)";
     ctx.beginPath();
     for (let x = 0; x <= tm.cols; x++) {
       ctx.moveTo(x * CELL + 0.5, 0);

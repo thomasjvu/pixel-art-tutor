@@ -13,7 +13,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-git-init.md; plan 003 (gates) recommended
 - **Category**: bug
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `78aad52`, 2026-08-26 (historical branch plan; reapply to the current checkout)
 
 ## Why this matters
 

@@ -14,6 +14,7 @@ import {
   shiftWrap,
 } from "../engine/pixels";
 import { blankProject, createStarterProject } from "../engine/seed";
+import type { ProjectChange } from "../realtime/projectEvents";
 
 export type TransformOp =
   | "flip_h"
@@ -56,6 +57,17 @@ function loadStored(): Project | null {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
+const projectListeners = new Set<(change: ProjectChange) => void>();
+
+export function subscribeProjectChanges(listener: (change: ProjectChange) => void): () => void {
+  projectListeners.add(listener);
+  return () => projectListeners.delete(listener);
+}
+
+function notifyProjectChange(change: ProjectChange): void {
+  for (const listener of projectListeners) listener(change);
+}
+
 export interface ResolveTarget {
   sprite: Sprite;
   frameIndex: number;
@@ -86,6 +98,14 @@ interface ProjectState {
   addSprite(opts: { name: string; width: number; height: number; kind: SpriteKind; copyFromId?: string }): string;
   deleteSprite(id: string): void;
   renameSprite(id: string, name: string): void;
+  renameProject(name: string): void;
+  importRasterSprite(opts: {
+    name: string;
+    width: number;
+    height: number;
+    frames: Array<Array<string | null>>;
+    kind?: SpriteKind;
+  }): string;
   addFrame(spriteId?: string, copyFrameIndex?: number): number;
   deleteFrame(frameIndex: number, spriteId?: string): boolean;
   selectFrame(index: number): void;
@@ -97,13 +117,19 @@ interface ProjectState {
   undo(): void;
   redo(): void;
   loadProject(p: Project): void;
+  applyRoomProject(p: Project): boolean;
   resetProject(kind: "starter" | "blank"): void;
   exportProject(): string;
 }
 
 export const useStore = create<ProjectState>()((set, get) => {
   /** commit: push current project into history and install next */
-  function commit(next: Project, extra?: Partial<ProjectState>) {
+  function commit(
+    next: Project,
+    extra?: Partial<ProjectState>,
+    source: ProjectChange["source"] = "local",
+    label = "Edit",
+  ) {
     const { project, past } = get();
     set({
       project: next,
@@ -112,6 +138,7 @@ export const useStore = create<ProjectState>()((set, get) => {
       ...extra,
     });
     scheduleSave();
+    notifyProjectChange({ project: next, previousProject: project, source, label });
   }
 
   function scheduleSave() {
@@ -393,6 +420,49 @@ export const useStore = create<ProjectState>()((set, get) => {
       commit(next);
     },
 
+    renameProject(name) {
+      const trimmed = name.trim();
+      if (!trimmed || trimmed === get().project.name) return;
+      const next = cloneProject(get().project);
+      next.name = trimmed;
+      commit(next);
+    },
+
+    importRasterSprite(opts) {
+      const next = cloneProject(get().project);
+      const width = Math.max(1, Math.min(64, Math.round(opts.width)));
+      const height = Math.max(1, Math.min(64, Math.round(opts.height)));
+      const id = uid("sprite");
+      const frames = opts.frames.slice(0, 32).map((source) => {
+        const pixels = new Array<number>(width * height).fill(TRANSPARENT);
+        for (let i = 0; i < pixels.length; i++) {
+          const value = source[i];
+          if (!value) continue;
+          const hex = normalizeHex(value);
+          if (!hex) continue;
+          let paletteIndex = next.palette.indexOf(hex);
+          if (paletteIndex < 0) {
+            if (next.palette.length >= MAX_PALETTE) continue;
+            paletteIndex = next.palette.length;
+            next.palette.push(hex);
+          }
+          pixels[i] = paletteIndex;
+        }
+        return { id: uid("frame"), pixels };
+      });
+      const safeFrames = frames.length > 0 ? frames : [{ id: uid("frame"), pixels: emptyPixels(width, height) }];
+      next.sprites.push({
+        id,
+        name: opts.name.trim() || "Imported sprite",
+        width,
+        height,
+        kind: opts.kind ?? "item",
+        frames: safeFrames,
+      });
+      commit(next, { activeSpriteId: id, activeFrameIndex: 0 });
+      return id;
+    },
+
     addFrame(spriteId, copyFrameIndex) {
       const t = get().resolveTarget(spriteId);
       if ("error" in t) return -1;
@@ -486,6 +556,7 @@ export const useStore = create<ProjectState>()((set, get) => {
         future: [project, ...future].slice(0, HISTORY_LIMIT),
       });
       scheduleSave();
+      notifyProjectChange({ project: prev, previousProject: project, source: "undo", label: "Undo" });
       const sp = prev.sprites.find((s) => s.id === get().activeSpriteId) ?? prev.sprites[0];
       if (sp) set({ activeSpriteId: sp.id, activeFrameIndex: Math.min(get().activeFrameIndex, sp.frames.length - 1) });
     },
@@ -500,6 +571,7 @@ export const useStore = create<ProjectState>()((set, get) => {
         future: future.slice(1),
       });
       scheduleSave();
+      notifyProjectChange({ project: nxt, previousProject: project, source: "redo", label: "Redo" });
     },
 
     loadProject(p) {
@@ -509,6 +581,27 @@ export const useStore = create<ProjectState>()((set, get) => {
         activeFrameIndex: 0,
         selectedTileId: null,
       });
+    },
+
+    applyRoomProject(p) {
+      if (p.schemaVersion !== 1 || !Array.isArray(p.sprites) || !p.sprites.length) return false;
+      const previousProject = get().project;
+      const project = cloneProject(p);
+      const active = project.sprites.find((sprite) => sprite.id === get().activeSpriteId) ?? project.sprites[0];
+      set({
+        project,
+        past: [],
+        future: [],
+        activeSpriteId: active.id,
+        activeFrameIndex: Math.min(get().activeFrameIndex, active.frames.length - 1),
+        selectedTileId:
+          get().selectedTileId && project.sprites.some((sprite) => sprite.id === get().selectedTileId)
+            ? get().selectedTileId
+            : null,
+      });
+      scheduleSave();
+      notifyProjectChange({ project, previousProject, source: "remote", label: "Room update" });
+      return true;
     },
 
     resetProject(kind) {

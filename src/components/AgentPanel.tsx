@@ -14,6 +14,7 @@ export function AgentPanel() {
   const mcpError = useUi((s) => s.mcpError);
   const tools = useUi((s) => s.registeredTools);
   const log = useUi((s) => s.log);
+  const agentPresence = useUi((s) => s.agentPresence);
 
   // keep inspector in sync with live tool registry
   useEffect(() => {
@@ -46,6 +47,19 @@ export function AgentPanel() {
         {mcpStatus === "unsupported" && "WebMCP unavailable in this browser"}
         {mcpStatus === "error" && (mcpError ?? "WebMCP error")}
       </div>
+
+      {agentPresence && (
+        <div className="agent-live-card">
+          <span className="agent-live-avatar">✦</span>
+          <div className="agent-live-copy">
+            <strong>{agentPresence.name} · {agentPresence.status}</strong>
+            <span>{agentPresence.message}</span>
+          </div>
+          <span className="agent-progress" aria-label={`${Math.round(agentPresence.progress * 100)}% complete`}>
+            <i style={{ width: `${Math.round(agentPresence.progress * 100)}%` }} />
+          </span>
+        </div>
+      )}
 
       {mcpStatus === "unsupported" && (
         <div className="callout">
