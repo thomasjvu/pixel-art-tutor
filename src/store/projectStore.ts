@@ -167,9 +167,10 @@ export const useStore = create<ProjectState>()((set, get) => {
 
     resolveTarget(spriteId, frameIndex) {
       const { project, activeSpriteId, activeFrameIndex } = get();
-      const sprite = spriteId
-        ? project.sprites.find((s) => s.id === spriteId)
-        : (project.sprites.find((s) => s.id === activeSpriteId) ?? project.sprites[0]);
+      const sprite =
+        spriteId === undefined
+          ? (project.sprites.find((s) => s.id === activeSpriteId) ?? project.sprites[0])
+          : project.sprites.find((s) => s.id === spriteId);
       if (!sprite) return { error: `sprite '${spriteId ?? "(none)"}' not found` };
       let fi: number;
       if (frameIndex === undefined) {
