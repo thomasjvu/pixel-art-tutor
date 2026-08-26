@@ -13,7 +13,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-git-init.md
 - **Category**: dx
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `2fc412d`, 2026-08-26 (reconciled after housekeeping)
 
 ## Why this matters
 
@@ -26,16 +26,18 @@ build.
 
 ## Current state
 
-- `package.json` scripts (lines 6-11):
+- `package.json` scripts (current checkpoint):
   ```json
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.worker.json --pretty false",
     "preview": "vite preview"
   },
   ```
-- No `.github/` directory exists. No `AGENTS.md`/`CLAUDE.md` exists.
+- No `.github/` directory exists. `AGENTS.md` already exists from the current
+  checkpoint and needs a final accuracy pass while the CI workflow is added.
 - Toolchain: Vite 8, TypeScript ~6.0 (`tsc -b` with project references:
   `tsconfig.json` → `tsconfig.app.json` + `tsconfig.node.json`), oxlint 1.x.
 - Architecture map (for AGENTS.md): `src/engine/` = pure pixel/color/critique logic
@@ -75,10 +77,11 @@ build.
 
 ## Steps
 
-### Step 1: Add the typecheck script
+### Step 1: Confirm the typecheck script
 
-In `package.json`, inside `scripts`, add `"typecheck": "tsc -b",` (keep existing
-scripts unchanged; place it after `build`).
+The current checkpoint already has a `typecheck` script that checks both the app
+and worker projects. Keep it unchanged unless the live file differs from the
+Current state excerpt; do not replace it with the older app-only command.
 
 **Verify**: `npm run typecheck` → exit 0, no output.
 
@@ -118,7 +121,7 @@ then `npm run lint && npm run typecheck && npm run build` locally → all exit 0
 Create `AGENTS.md` at the repo root with these sections (concise; ~60 lines):
 
 1. **What this is** — one paragraph: WebMCP pixel-art studio; humans and AI agents
-   co-edit one canvas; agent surface = 16 tools in `src/webmcp/registerTools.ts`
+   co-edit one canvas; agent surface = 16 imperative tools in `src/webmcp/registerTools.ts`
    plus 1 declarative form tool in `src/components/SpritesPanel.tsx`.
 2. **Commands** — table: `npm run dev` (Vite dev server), `npm run lint` (oxlint),
    `npm run typecheck` (`tsc -b`), `npm run build` (typecheck + vite build).
@@ -132,7 +135,8 @@ Create `AGENTS.md` at the repo root with these sections (concise; ~60 lines):
 5. **Gotchas** — `document.modelContext` may be undefined (browsers without
    WebMCP); tool registration is aborted on React unmount (StrictMode remounts are
    expected and handled); localStorage hydration must stay defensive (see plan
-   004's validator once it lands).
+   004's validator once it lands); room presence is collaborative display state,
+   not authentication.
 
 **Verify**: `ls AGENTS.md` exists; `grep -c "npm run" AGENTS.md` ≥ 4.
 
@@ -144,7 +148,8 @@ None — maintainer deferred tests. The CI workflow itself becomes the baseline.
 
 - [ ] `npm run typecheck` exits 0
 - [ ] `.github/workflows/ci.yml` exists and mentions lint, typecheck, build
-- [ ] `AGENTS.md` exists with commands + architecture + settled decisions
+- [ ] `AGENTS.md` exists with commands + architecture + settled decisions and
+      reports the live 16-tool registry accurately
 - [ ] `git diff --stat` shows only `package.json`, `.github/workflows/ci.yml`,
       `AGENTS.md`
 

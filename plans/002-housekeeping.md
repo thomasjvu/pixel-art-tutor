@@ -13,7 +13,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-git-init.md
 - **Category**: dx / tech-debt
-- **Planned at**: no VCS at planning time; base = plan 001's initial commit
+- **Planned at**: commit `d7b8878`, 2026-08-26 (reapplied to the Opencode checkpoint)
 
 ## Why this matters
 
