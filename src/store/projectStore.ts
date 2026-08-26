@@ -88,7 +88,13 @@ interface ProjectState {
   drawLine(from: [number, number], to: [number, number], colorIdx: number): void;
   applyPixelChanges(changes: PixelChange[], spriteId?: string, frameIndex?: number, allFrames?: boolean): { applied: number; addedColors: number[] };
   fillRegion(x: number, y: number, w: number, h: number, color: number | string | null, spriteId?: string, frameIndex?: number, allFrames?: boolean): number | { error: string };
-  floodFillAt(x: number, y: number, colorIdx: number): void;
+  floodFillAt(
+    x: number,
+    y: number,
+    color: number | string | null,
+    spriteId?: string,
+    frameIndex?: number,
+  ): void | { error: string };
   clearFrame(spriteId?: string, frameIndex?: number): void;
   transform(op: TransformOp, opts: { dx?: number; dy?: number; color?: number | string | null; frameIndices?: number[]; spriteId?: string }): string | null;
   replaceColor(from: number | string | null, to: number | string | null, spriteId?: string): number | { error: string };
@@ -298,13 +304,15 @@ export const useStore = create<ProjectState>()((set, get) => {
       return count;
     },
 
-    floodFillAt(x, y, colorIdx) {
-      const t = get().resolveTarget();
+    floodFillAt(x, y, color, spriteId, frameIndex) {
+      const t = get().resolveTarget(spriteId, frameIndex);
       if ("error" in t) return;
-      const { sprite, frameIndex } = t;
+      const { sprite, frameIndex: fi } = t;
       const next = cloneProject(get().project);
-      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
-      frame.pixels = floodFill(frame.pixels, sprite.width, sprite.height, x, y, colorIdx);
+      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[fi];
+      const resolved = resolveColorInto(color, next);
+      if ("error" in resolved) return { error: resolved.error };
+      frame.pixels = floodFill(frame.pixels, sprite.width, sprite.height, x, y, resolved.index);
       commit(next);
     },
 

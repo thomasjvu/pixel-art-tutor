@@ -49,7 +49,7 @@ await document.modelContext.registerTool({
 });
 ```
 
-### Tool catalog (17 tools)
+### Tool catalog (20 tools)
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -61,12 +61,15 @@ await document.modelContext.registerTool({
 | `export_project` | read-only | Full project JSON |
 | `set_pixels` | write | Batch pixel painting (hex / palette index / transparent) |
 | `fill_region` | write | Rectangle fill |
+| `flood_fill` | write | Bucket-fill a connected region |
 | `clear_frame` | write | Empty a frame |
 | `transform_sprite` | write | flip_h / flip_v / rotate_90 / shift / outline |
 | `replace_color` | write | Global palette remap |
 | `add_palette_color` | write | Extend shared palette |
 | `set_active_sprite` | write | Point the human's editor at a sprite |
 | `add_frame` | write | Duplicate frame for animation |
+| `delete_frame` | write | Delete an animation frame (with confirmation) |
+| `rename_sprite` | write | Rename an existing sprite |
 | `add_sprite` | write | New character/item/tile |
 | `place_tile` | write | Paint one map cell |
 | `fill_tiles` | write | Paint a map region |

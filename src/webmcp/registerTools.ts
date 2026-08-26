@@ -295,6 +295,45 @@ export function registerTutorTools(): AbortController {
       },
     }),
 
+    defineTool<{
+      x: number;
+      y: number;
+      color: number | string | null;
+      spriteId?: string;
+      frameIndex?: number;
+    }>({
+      name: "flood_fill",
+      title: "Flood fill region",
+      description:
+        "Bucket-fill: starting at x,y, replace all connected pixels of the same color with the new color (transparent counts as a color). Fails clearly if the start pixel is out of bounds.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          x: { type: "number" },
+          y: { type: "number" },
+          color: colorSchemaProp,
+          spriteId: { type: "string" },
+          frameIndex: { type: "number" },
+        },
+        required: ["x", "y", "color"],
+      },
+      execute: ({ x, y, color, spriteId, frameIndex }) => {
+        const t = target(spriteId, frameIndex);
+        if ("error" in t) return { ok: false, error: t.error };
+        const sx = Math.round(x);
+        const sy = Math.round(y);
+        if (sx < 0 || sy < 0 || sx >= t.sprite.width || sy >= t.sprite.height)
+          return {
+            ok: false,
+            error: `start pixel (${sx},${sy}) is outside the ${t.sprite.width}x${t.sprite.height} canvas`,
+          };
+        const result = useStore.getState().floodFillAt(sx, sy, color, t.sprite.id, t.frameIndex);
+        if (result && "error" in result) return { ok: false, error: result.error };
+        log("flood_fill", `${t.sprite.name} @ ${sx},${sy}`);
+        return { ok: true };
+      },
+    }),
+
     defineTool<TargetedInput>({
       name: "clear_frame",
       title: "Clear frame",
@@ -527,6 +566,55 @@ export function registerTutorTools(): AbortController {
         finishAgentAction(actionId, `Added frame ${idx + 1}`);
         log("add_frame", `frame ${idx}`);
         return { ok: true, newIndex: idx };
+      },
+    }),
+
+    defineTool<{ frameIndex: number; spriteId?: string; confirm: boolean }>({
+      name: "delete_frame",
+      title: "Delete animation frame",
+      description:
+        "Delete one animation frame from a sprite. Requires confirm:true. Refuses to delete a sprite's last remaining frame.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          frameIndex: { type: "number", description: "Zero-based frame to delete" },
+          spriteId: { type: "string" },
+          confirm: { type: "boolean", description: "Must be true to perform the deletion" },
+        },
+        required: ["frameIndex", "confirm"],
+      },
+      execute: ({ frameIndex, spriteId, confirm }) => {
+        if (confirm !== true) return { ok: false, error: "deletion requires confirm:true" };
+        const t = target(spriteId, frameIndex);
+        if ("error" in t) return { ok: false, error: t.error };
+        const ok = useStore.getState().deleteFrame(frameIndex, t.sprite.id);
+        log("delete_frame", ok ? `${t.sprite.name} frame ${frameIndex}` : `refused (${t.sprite.name})`);
+        return ok
+          ? { ok: true }
+          : { ok: false, error: "cannot delete the sprite's last remaining frame" };
+      },
+    }),
+
+    defineTool<{ spriteId: string; name: string }>({
+      name: "rename_sprite",
+      title: "Rename sprite",
+      description: "Rename an existing sprite (e.g. after giving an untitled sprite an identity).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          spriteId: { type: "string" },
+          name: { type: "string", description: "New name (non-empty)" },
+        },
+        required: ["spriteId", "name"],
+      },
+      execute: ({ spriteId, name }) => {
+        const t = target(spriteId);
+        if ("error" in t) return { ok: false, error: t.error };
+        if (typeof name !== "string" || !name.trim())
+          return { ok: false, error: "name must be a non-empty string" };
+        useStore.getState().renameSprite(t.sprite.id, name.trim());
+        log("rename_sprite", `${t.sprite.name} -> ${name.trim()}`);
+        return { ok: true, spriteId: t.sprite.id, name: name.trim() };
       },
     }),
 
