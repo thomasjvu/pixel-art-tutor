@@ -55,9 +55,9 @@ export function CanvasStage() {
       const len = st.activeSprite()?.frames.length ?? 0;
       if (len < 2) return;
       st.selectFrame((st.activeFrameIndex + 1) % len);
-    }, 220);
+    }, 1000 / fps);
     return () => clearInterval(id);
-  }, [playing, sprite?.id]);
+  }, [playing, sprite?.id, fps]);
 
   useEffect(() => {
     if (!playing && sprite && activeFrameIndex > sprite.frames.length - 1) selectFrame(0);
