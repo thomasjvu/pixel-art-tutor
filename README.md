@@ -49,7 +49,7 @@ await document.modelContext.registerTool({
 });
 ```
 
-### Tool catalog (16 tools)
+### Tool catalog (17 tools)
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -57,6 +57,7 @@ await document.modelContext.registerTool({
 | `read_sprite` | read-only | Frame as ASCII art rows + color legend |
 | `critique_artwork` | read-only | Tutor engine: score, stats, findings, tips |
 | `get_tilemap` | read-only | Map grid as ASCII + tile legend |
+| `ensure_tilemap` | write | Create/resize the tilemap (clamped 2–64) |
 | `export_project` | read-only | Full project JSON |
 | `set_pixels` | write | Batch pixel painting (hex / palette index / transparent) |
 | `fill_region` | write | Rectangle fill |

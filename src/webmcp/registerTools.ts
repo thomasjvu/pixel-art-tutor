@@ -582,7 +582,7 @@ export function registerTutorTools(): AbortController {
       execute: () => {
         const st = useStore.getState();
         const tm = st.project.tilemap;
-        if (!tm) return { ok: false, error: "no tilemap exists yet; ask the human to open the Map tab" };
+        if (!tm) return { ok: false, error: "no tilemap exists yet; call ensure_tilemap first to create one" };
         const tiles = st.project.sprites.filter((sp) => sp.kind === "tile");
         const charFor = new Map<string, string>();
         tiles.forEach((t, i) => charFor.set(t.id, DIGITS[(i + 10) % 36]!));
@@ -603,6 +603,35 @@ export function registerTutorTools(): AbortController {
           transparentChar: ".",
           legend: tiles.map((t) => ({ char: charFor.get(t.id), id: t.id, name: t.name })),
           rows_ascii: rowsAscii,
+        };
+      },
+    }),
+
+    defineTool<{ cols: number; rows: number }>({
+      name: "ensure_tilemap",
+      title: "Create or resize tilemap",
+      description:
+        "Create the project tilemap (or resize it, preserving overlapping cells) so tiles can be placed. Cols/rows are clamped to 2-64; default to 12x9 when unsure. No-ops with ok:true if the map already has these dimensions.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          cols: { type: "number", description: "Map width in tiles (2-64)" },
+          rows: { type: "number", description: "Map height in tiles (2-64)" },
+        },
+        required: ["cols", "rows"],
+      },
+      execute: ({ cols, rows }) => {
+        const st = useStore.getState();
+        const before = st.project.tilemap;
+        st.ensureTilemap(Math.round(cols), Math.round(rows));
+        const after = useStore.getState().project.tilemap;
+        const created = !before && !!after;
+        log("ensure_tilemap", created ? `created ${after?.cols}x${after?.rows}` : `ensured ${after?.cols}x${after?.rows}`);
+        return {
+          ok: true,
+          created,
+          size: after ? `${after.cols}x${after.rows}` : null,
+          note: created ? "tilemap created" : "tilemap already existed or was resized",
         };
       },
     }),
