@@ -3,7 +3,7 @@
 ## What this is
 
 A WebMCP pixel-art studio: humans and AI agents co-edit one canvas in real time.
-The agent surface is 21 tools registered in `src/webmcp/registerTools.ts`, plus
+The agent surface is 16 imperative tools registered in `src/webmcp/registerTools.ts`, plus
 1 declarative form tool in `src/components/SpritesPanel.tsx`.
 
 ## Commands
@@ -12,7 +12,7 @@ The agent surface is 21 tools registered in `src/webmcp/registerTools.ts`, plus
 | --- | --- |
 | `npm run dev` | Start Vite dev server |
 | `npm run lint` | Lint with oxlint |
-| `npm run typecheck` | Typecheck via `tsc -b` (project references) |
+| `npm run typecheck` | Typecheck via `tsc -b` and the worker project |
 | `npm run build` | Typecheck + vite production build |
 
 Run lint + typecheck + build before declaring any change done.
@@ -46,4 +46,5 @@ Rules:
 - `document.modelContext` may be undefined (browsers without WebMCP).
 - Tool registration is aborted on React unmount (StrictMode remounts are
   expected and handled).
-- localStorage hydration must stay defensive.
+- localStorage hydration must stay defensive (see plan 004's validator once it lands).
+- Room presence is collaborative display state, not authentication.
