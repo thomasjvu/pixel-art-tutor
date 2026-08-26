@@ -1,0 +1,531 @@
+import { create } from "zustand";
+import type { Frame, PixelChange, Project, Sprite, SpriteKind } from "../types";
+import { TRANSPARENT } from "../types";
+import { normalizeHex } from "../engine/color";
+import {
+  bresenhamLine,
+  emptyPixels,
+  floodFill,
+  flipH,
+  flipV,
+  inBounds,
+  outline as outlineOp,
+  rotate90,
+  shiftWrap,
+} from "../engine/pixels";
+import { blankProject, createStarterProject } from "../engine/seed";
+
+export type TransformOp =
+  | "flip_h"
+  | "flip_v"
+  | "rotate_90"
+  | "shift"
+  | "outline";
+
+const MAX_PALETTE = 64;
+const HISTORY_LIMIT = 60;
+const STORAGE_KEY = "pixel-art-tutor.project.v1";
+
+function uid(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function cloneProject(p: Project): Project {
+  return {
+    ...p,
+    palette: [...p.palette],
+    sprites: p.sprites.map((s) => ({
+      ...s,
+      frames: s.frames.map((f) => ({ id: f.id, pixels: [...f.pixels] })),
+    })),
+    tilemap: p.tilemap ? { ...p.tilemap, cells: [...p.tilemap.cells] } : null,
+  };
+}
+
+function loadStored(): Project | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Project;
+    if (parsed?.schemaVersion !== 1 || !Array.isArray(parsed.sprites)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+export interface ResolveTarget {
+  sprite: Sprite;
+  frameIndex: number;
+}
+
+interface ProjectState {
+  project: Project;
+  activeSpriteId: string;
+  activeFrameIndex: number;
+  selectedTileId: string | null;
+  past: Project[];
+  future: Project[];
+
+  activeSprite(): Sprite;
+  resolveTarget(spriteId?: string, frameIndex?: number): ResolveTarget | { error: string };
+
+  setColorAt(x: number, y: number, colorIdx: number): void;
+  drawLine(from: [number, number], to: [number, number], colorIdx: number): void;
+  applyPixelChanges(changes: PixelChange[], spriteId?: string, frameIndex?: number, allFrames?: boolean): { applied: number; addedColors: number[] };
+  fillRegion(x: number, y: number, w: number, h: number, colorIdx: number, spriteId?: string, frameIndex?: number, allFrames?: boolean): number;
+  floodFillAt(x: number, y: number, colorIdx: number): void;
+  clearFrame(spriteId?: string, frameIndex?: number): void;
+  transform(op: TransformOp, opts: { dx?: number; dy?: number; colorIdx?: number; frameIndices?: number[]; spriteId?: string }): string | null;
+  replaceColor(fromIdx: number, toIdx: number, spriteId?: string): number;
+
+  addPaletteColor(hex: string): { index: number } | { error: string };
+  setActiveSprite(spriteId: string, frameIndex?: number): boolean;
+  addSprite(opts: { name: string; width: number; height: number; kind: SpriteKind; copyFromId?: string }): string;
+  deleteSprite(id: string): void;
+  renameSprite(id: string, name: string): void;
+  addFrame(spriteId?: string, copyFrameIndex?: number): number;
+  deleteFrame(frameIndex: number, spriteId?: string): boolean;
+  selectFrame(index: number): void;
+
+  ensureTilemap(cols: number, rows: number): void;
+  placeTile(x: number, y: number, spriteId: string | null): boolean;
+  fillTiles(x: number, y: number, w: number, h: number, spriteId: string | null): number;
+
+  undo(): void;
+  redo(): void;
+  loadProject(p: Project): void;
+  resetProject(kind: "starter" | "blank"): void;
+  exportProject(): string;
+}
+
+export const useStore = create<ProjectState>()((set, get) => {
+  /** commit: push current project into history and install next */
+  function commit(next: Project, extra?: Partial<ProjectState>) {
+    const { project, past } = get();
+    set({
+      project: next,
+      past: [...past.slice(-HISTORY_LIMIT), project],
+      future: [],
+      ...extra,
+    });
+    scheduleSave();
+  }
+
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(get().project));
+      } catch {
+        /* storage full or unavailable */
+      }
+    }, 400);
+  }
+
+  return {
+    project: loadStored() ?? createStarterProject(),
+    activeSpriteId: "",
+    activeFrameIndex: 0,
+    selectedTileId: null,
+    past: [],
+    future: [],
+
+    activeSprite() {
+      const { project, activeSpriteId } = get();
+      return project.sprites.find((s) => s.id === activeSpriteId) ?? project.sprites[0];
+    },
+
+    resolveTarget(spriteId, frameIndex) {
+      const { project, activeSpriteId, activeFrameIndex } = get();
+      const sprite = project.sprites.find((s) => s.id === spriteId) ?? project.sprites[0];
+      if (!sprite) return { error: `sprite '${spriteId}' not found` };
+      let fi: number;
+      if (frameIndex === undefined) {
+        fi = sprite.id === activeSpriteId ? activeFrameIndex : 0;
+      } else {
+        fi = frameIndex;
+      }
+      fi = Math.max(0, Math.min(fi, sprite.frames.length - 1));
+      if (!sprite.frames[fi]) return { error: `sprite '${sprite.name}' has no frames` };
+      return { sprite, frameIndex: fi };
+    },
+
+    setColorAt(x, y, colorIdx) {
+      const t = get().resolveTarget();
+      if ("error" in t) return;
+      const { sprite, frameIndex } = t;
+      if (!inBounds(x, y, sprite.width, sprite.height)) return;
+      const next = cloneProject(get().project);
+      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
+      frame.pixels[y * sprite.width + x] = colorIdx;
+      commit(next);
+    },
+
+    drawLine(from, to, colorIdx) {
+      const t = get().resolveTarget();
+      if ("error" in t) return;
+      const { sprite, frameIndex } = t;
+      const next = cloneProject(get().project);
+      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
+      for (const [x, y] of bresenhamLine(from[0], from[1], to[0], to[1])) {
+        if (inBounds(x, y, sprite.width, sprite.height))
+          frame.pixels[y * sprite.width + x] = colorIdx;
+      }
+      commit(next);
+    },
+
+    applyPixelChanges(changes, spriteId, frameIndex, allFrames) {
+      const t = get().resolveTarget(spriteId, frameIndex);
+      if ("error" in t)
+        return { applied: 0, addedColors: [] };
+      const { sprite, frameIndex: fi } = t;
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      let applied = 0;
+      const addedColors: number[] = [];
+      const frameIdxs = allFrames
+        ? target.frames.map((_, i) => i)
+        : [fi];
+      for (const ch of changes) {
+        let colorIdx: number;
+        if (ch.color === null || ch.color === "transparent") colorIdx = TRANSPARENT;
+        else if (typeof ch.color === "number") colorIdx = ch.color;
+        else {
+          const hex = normalizeHex(ch.color);
+          if (!hex) continue;
+          const existing = next.palette.indexOf(hex);
+          if (existing >= 0) colorIdx = existing;
+          else {
+            if (next.palette.length >= MAX_PALETTE) continue;
+            colorIdx = next.palette.length;
+            next.palette.push(hex);
+            addedColors.push(colorIdx);
+          }
+        }
+        for (const fi of frameIdxs) {
+          const frame = target.frames[fi];
+          if (!frame) continue;
+          if (!inBounds(ch.x, ch.y, target.width, target.height)) continue;
+          frame.pixels[ch.y * target.width + ch.x] = colorIdx;
+          applied++;
+        }
+      }
+      if (applied > 0) commit(next);
+      return { applied, addedColors };
+    },
+
+    fillRegion(x, y, w, h, colorIdx, spriteId, frameIndex, allFrames) {
+      const t = get().resolveTarget(spriteId, frameIndex);
+      if ("error" in t) return 0;
+      const { sprite, frameIndex: fi } = t;
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const fis = allFrames ? target.frames.map((_, i) => i) : [fi];
+      let count = 0;
+      for (const idx of fis) {
+        const frame = target.frames[idx];
+        if (!frame) continue;
+        for (let yy = y; yy < y + h; yy++)
+          for (let xx = x; xx < x + w; xx++)
+            if (inBounds(xx, yy, target.width, target.height)) {
+              frame.pixels[yy * target.width + xx] = colorIdx;
+              count++;
+            }
+      }
+      if (count > 0) commit(next);
+      return count;
+    },
+
+    floodFillAt(x, y, colorIdx) {
+      const t = get().resolveTarget();
+      if ("error" in t) return;
+      const { sprite, frameIndex } = t;
+      const next = cloneProject(get().project);
+      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
+      frame.pixels = floodFill(frame.pixels, sprite.width, sprite.height, x, y, colorIdx);
+      commit(next);
+    },
+
+    clearFrame(spriteId, frameIndex) {
+      const t = get().resolveTarget(spriteId, frameIndex);
+      if ("error" in t) return;
+      const { sprite, frameIndex: fi } = t;
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      target.frames[fi].pixels = emptyPixels(target.width, target.height);
+      commit(next);
+    },
+
+    transform(op, opts) {
+      const t = get().resolveTarget(opts.spriteId);
+      if ("error" in t) return t.error;
+      const { sprite } = t;
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const fis =
+        opts.frameIndices && opts.frameIndices.length
+          ? opts.frameIndices.filter((i) => target.frames[i])
+          : target.frames.map((_, i) => i);
+
+      for (const fi of fis) {
+        const frame: Frame = target.frames[fi];
+        if (op === "flip_h") frame.pixels = flipH(frame.pixels, target.width, target.height);
+        else if (op === "flip_v") frame.pixels = flipV(frame.pixels, target.width, target.height);
+        else if (op === "rotate_90") {
+          const r = rotate90(frame.pixels, target.width, target.height);
+          frame.pixels = r.pixels;
+          // rotation changes dimensions; keep all frames consistent by resizing whole sprite only when rotating all
+          if (fis.length === target.frames.length) {
+            target.width = r.w;
+            target.height = r.h;
+          } else {
+            return "rotating a single frame would desync sprite dimensions; rotate all frames instead";
+          }
+        } else if (op === "shift") {
+          frame.pixels = shiftWrap(
+            frame.pixels,
+            target.width,
+            target.height,
+            opts.dx ?? 0,
+            opts.dy ?? 0,
+          );
+        } else if (op === "outline") {
+          const c = opts.colorIdx ?? 0;
+          frame.pixels = outlineOp(frame.pixels, target.width, target.height, c);
+        }
+      }
+      commit(next);
+      return null;
+    },
+
+    replaceColor(fromIdx, toIdx, spriteId) {
+      const { project } = get();
+      const target = spriteId ? project.sprites.find((s) => s.id === spriteId) : null;
+      const sprites = target ? [target] : project.sprites;
+      const next = cloneProject(project);
+      let count = 0;
+      for (const sp of sprites) {
+        const nsp = next.sprites.find((s) => s.id === sp.id)!;
+        for (const f of nsp.frames)
+          for (let i = 0; i < f.pixels.length; i++)
+            if (f.pixels[i] === fromIdx) {
+              f.pixels[i] = toIdx;
+              count++;
+            }
+      }
+      if (count > 0) commit(next);
+      return count;
+    },
+
+    addPaletteColor(hex) {
+      const normalized = normalizeHex(hex);
+      if (!normalized) return { error: `'${hex}' is not a valid hex color like #38b764` };
+      const { project } = get();
+      const existing = project.palette.indexOf(normalized);
+      if (existing >= 0) return { index: existing };
+      if (project.palette.length >= MAX_PALETTE)
+        return { error: `palette is full (${MAX_PALETTE} colors max)` };
+      const next = cloneProject(project);
+      next.palette.push(normalized);
+      commit(next);
+      return { index: next.palette.length - 1 };
+    },
+
+    setActiveSprite(spriteId, frameIndex) {
+      const { project } = get();
+      const idx = project.sprites.findIndex((s) => s.id === spriteId);
+      if (idx < 0) return false;
+      const sprite = project.sprites[idx];
+      const fi = frameIndex !== undefined ? Math.max(0, Math.min(frameIndex, sprite.frames.length - 1)) : 0;
+      set({ activeSpriteId: sprite.id, activeFrameIndex: fi });
+      return true;
+    },
+
+    addSprite(opts) {
+      const next = cloneProject(get().project);
+      const w = Math.max(1, Math.min(64, Math.round(opts.width)));
+      const h = Math.max(1, Math.min(64, Math.round(opts.height)));
+      let pixels = emptyPixels(w, h);
+      let frameCount = opts.kind === "character" ? 2 : 1;
+      if (opts.copyFromId) {
+        const src = next.sprites.find((s) => s.id === opts.copyFromId);
+        if (src && src.width === w && src.height === h) {
+          pixels = [...src.frames[0].pixels];
+          frameCount = src.frames.length;
+        }
+      }
+      const id = uid("sprite");
+      const sprite: Sprite = {
+        id,
+        name: opts.name || "Untitled",
+        width: w,
+        height: h,
+        kind: opts.kind,
+        frames: Array.from({ length: frameCount }, (_, i) => ({
+          id: `${id}-f${i}`,
+          pixels: i === 0 ? pixels : [...pixels],
+        })),
+      };
+      next.sprites.push(sprite);
+      commit(next, { activeSpriteId: id, activeFrameIndex: 0 });
+      return id;
+    },
+
+    deleteSprite(id) {
+      const { project } = get();
+      if (project.sprites.length <= 1) return;
+      const next = cloneProject(project);
+      next.sprites = next.sprites.filter((s) => s.id !== id);
+      const extra: Partial<ProjectState> = {};
+      if (get().activeSpriteId === id) extra.activeSpriteId = next.sprites[0].id;
+      if (get().selectedTileId === id) extra.selectedTileId = null;
+      commit(next, extra);
+    },
+
+    renameSprite(id, name) {
+      const next = cloneProject(get().project);
+      const sp = next.sprites.find((s) => s.id === id);
+      if (!sp || !name.trim()) return;
+      sp.name = name.trim();
+      commit(next);
+    },
+
+    addFrame(spriteId, copyFrameIndex) {
+      const t = get().resolveTarget(spriteId);
+      if ("error" in t) return -1;
+      const { sprite } = t;
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const srcIdx = copyFrameIndex ?? target.frames.length - 1;
+      const src = target.frames[Math.max(0, Math.min(srcIdx, target.frames.length - 1))];
+      const id = uid("frame");
+      target.frames.push({ id, pixels: src ? [...src.pixels] : emptyPixels(target.width, target.height) });
+      commit(next, { activeFrameIndex: target.frames.length - 1 });
+      return target.frames.length - 1;
+    },
+
+    deleteFrame(frameIndex, spriteId) {
+      const t = get().resolveTarget(spriteId);
+      if ("error" in t) return false;
+      const { sprite } = t;
+      if (sprite.frames.length <= 1) return false;
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      target.frames.splice(frameIndex, 1);
+      commit(next, {
+        activeFrameIndex: Math.min(get().activeFrameIndex, target.frames.length - 1),
+      });
+      return true;
+    },
+
+    selectFrame(index) {
+      set({ activeFrameIndex: index });
+    },
+
+    ensureTilemap(cols, rows) {
+      const { project } = get();
+      const c = Math.max(2, Math.min(64, cols));
+      const r = Math.max(2, Math.min(64, rows));
+      const next = cloneProject(project);
+      if (
+        next.tilemap &&
+        next.tilemap.cols === c &&
+        next.tilemap.rows === r
+      ) {
+        return;
+      }
+      const old = next.tilemap;
+      const cells: (string | null)[] = new Array(c * r).fill(null);
+      if (old) {
+        for (let y = 0; y < Math.min(r, old.rows); y++)
+          for (let x = 0; x < Math.min(c, old.cols); x++)
+            cells[y * c + x] = old.cells[y * old.cols + x] ?? null;
+      }
+      next.tilemap = { cols: c, rows: r, cells };
+      commit(next);
+    },
+
+    placeTile(x, y, spriteId) {
+      const { project } = get();
+      const tm = project.tilemap;
+      if (!tm || !inBounds(x, y, tm.cols, tm.rows)) return false;
+      if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId)) return false;
+      const next = cloneProject(project);
+      next.tilemap!.cells[y * tm.cols + x] = spriteId;
+      commit(next);
+      return true;
+    },
+
+    fillTiles(x, y, w, h, spriteId) {
+      const { project } = get();
+      const tm = project.tilemap;
+      if (!tm) return 0;
+      if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId)) return 0;
+      const next = cloneProject(project);
+      let count = 0;
+      for (let yy = y; yy < y + h; yy++)
+        for (let xx = x; xx < x + w; xx++) {
+          if (!inBounds(xx, yy, tm.cols, tm.rows)) continue;
+          next.tilemap!.cells[yy * tm.cols + xx] = spriteId;
+          count++;
+        }
+      if (count) commit(next);
+      return count;
+    },
+
+    undo() {
+      const { past, project, future } = get();
+      if (!past.length) return;
+      const prev = past[past.length - 1];
+      set({
+        project: prev,
+        past: past.slice(0, -1),
+        future: [project, ...future].slice(0, HISTORY_LIMIT),
+      });
+      scheduleSave();
+      const sp = prev.sprites.find((s) => s.id === get().activeSpriteId) ?? prev.sprites[0];
+      if (sp) set({ activeSpriteId: sp.id, activeFrameIndex: Math.min(get().activeFrameIndex, sp.frames.length - 1) });
+    },
+
+    redo() {
+      const { past, project, future } = get();
+      if (!future.length) return;
+      const nxt = future[0];
+      set({
+        project: nxt,
+        past: [...past.slice(-HISTORY_LIMIT), project],
+        future: future.slice(1),
+      });
+      scheduleSave();
+    },
+
+    loadProject(p) {
+      if (p.schemaVersion !== 1 || !Array.isArray(p.sprites) || !p.sprites.length) return;
+      commit(cloneProject(p), {
+        activeSpriteId: p.sprites[0].id,
+        activeFrameIndex: 0,
+        selectedTileId: null,
+      });
+    },
+
+    resetProject(kind) {
+      const p = kind === "starter" ? createStarterProject() : blankProject();
+      commit(p, { activeSpriteId: p.sprites[0].id, activeFrameIndex: 0, selectedTileId: null });
+    },
+
+    exportProject() {
+      return JSON.stringify(get().project, null, 2);
+    },
+  };
+});
+
+// initialize selection to first sprite on boot
+(() => {
+  const s = useStore.getState();
+  if (!s.project.sprites.some((sp) => sp.id === s.activeSpriteId)) {
+    useStore.setState({ activeSpriteId: s.project.sprites[0]?.id ?? "" });
+  }
+})();
