@@ -22,7 +22,7 @@ export function CanvasStage() {
   const roomPeers = useUi((s) => s.roomPeers);
   const remotePeers = Object.values(roomPeers);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [dragging, setDragging] = useState(false);
+  const dragging = useRef(false);
   const [canvasBox, setCanvasBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const lastCell = useRef<[number, number] | null>(null);
 
@@ -52,10 +52,12 @@ export function CanvasStage() {
     if (!playing || !sprite || sprite.frames.length < 2) return;
     const id = setInterval(() => {
       const st = useStore.getState();
-      st.selectFrame((st.activeFrameIndex + 1) % (sprite.frames.length));
-    }, 1000 / fps);
+      const len = st.activeSprite()?.frames.length ?? 0;
+      if (len < 2) return;
+      st.selectFrame((st.activeFrameIndex + 1) % len);
+    }, 220);
     return () => clearInterval(id);
-  }, [playing, sprite, fps]);
+  }, [playing, sprite?.id]);
 
   useEffect(() => {
     if (!playing && sprite && activeFrameIndex > sprite.frames.length - 1) selectFrame(0);
@@ -211,14 +213,20 @@ export function CanvasStage() {
             const cell = cellFromEvent(e);
             if (!cell) return;
             const erase = e.button === 2;
-            setDragging(true);
+            dragging.current = true;
             lastCell.current = cell;
+            if (tool === "pencil" || tool === "eraser") useStore.getState().beginStroke();
             applyAt(cell, erase);
           }}
           onPointerMove={(e) => {
             const cell = cellFromEvent(e);
             useEditor.getState().setHover(cell ? { x: cell[0], y: cell[1] } : null);
-            if (!dragging || !cell) return;
+            if (!dragging.current || !cell) return;
+            if (e.buttons === 0) {
+              dragging.current = false;
+              useStore.getState().endStroke();
+              return;
+            }
             const erase = e.buttons === 2;
             if (
               tool !== "fill" &&
@@ -232,12 +240,14 @@ export function CanvasStage() {
             lastCell.current = cell;
           }}
           onPointerUp={() => {
-            setDragging(false);
+            dragging.current = false;
             lastCell.current = null;
+            useStore.getState().endStroke();
           }}
           onPointerCancel={() => {
-            setDragging(false);
+            dragging.current = false;
             lastCell.current = null;
+            useStore.getState().endStroke();
           }}
           onPointerLeave={() => useEditor.getState().setHover(null)}
         />

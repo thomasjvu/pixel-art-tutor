@@ -93,6 +93,9 @@ interface ProjectState {
   transform(op: TransformOp, opts: { dx?: number; dy?: number; colorIdx?: number; frameIndices?: number[]; spriteId?: string }): string | null;
   replaceColor(fromIdx: number, toIdx: number, spriteId?: string): number;
 
+  beginStroke(): void;
+  endStroke(label?: string): void;
+
   addPaletteColor(hex: string): { index: number } | { error: string };
   setActiveSprite(spriteId: string, frameIndex?: number): boolean;
   addSprite(opts: { name: string; width: number; height: number; kind: SpriteKind; copyFromId?: string }): string;
@@ -123,6 +126,9 @@ interface ProjectState {
 }
 
 export const useStore = create<ProjectState>()((set, get) => {
+  let strokeActive = false;
+  let strokeBaseProject: Project | null = null;
+
   /** commit: push current project into history and install next */
   function commit(
     next: Project,
@@ -131,6 +137,11 @@ export const useStore = create<ProjectState>()((set, get) => {
     label = "Edit",
   ) {
     const { project, past } = get();
+    if (strokeActive) {
+      // history and the room event are finalized once at endStroke
+      set({ project: next, ...extra });
+      return;
+    }
     set({
       project: next,
       past: [...past.slice(-HISTORY_LIMIT), project],
@@ -159,6 +170,30 @@ export const useStore = create<ProjectState>()((set, get) => {
     selectedTileId: null,
     past: [],
     future: [],
+
+    beginStroke() {
+      if (strokeActive) return;
+      const { project, past } = get();
+      strokeBaseProject = project;
+      strokeActive = true;
+      set({ past: [...past.slice(-HISTORY_LIMIT), project], future: [] });
+    },
+
+    endStroke(label = "Paint stroke") {
+      if (!strokeActive) return;
+      strokeActive = false;
+      const previousProject = strokeBaseProject;
+      strokeBaseProject = null;
+      scheduleSave();
+      if (previousProject) {
+        notifyProjectChange({
+          project: get().project,
+          previousProject,
+          source: "local",
+          label,
+        });
+      }
+    },
 
     activeSprite() {
       const { project, activeSpriteId } = get();

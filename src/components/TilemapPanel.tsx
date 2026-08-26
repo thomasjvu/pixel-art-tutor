@@ -27,6 +27,7 @@ export function TilemapPanel() {
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     const CELL = canvas.width / tm.cols;
+    const spriteById = new Map(project.sprites.map((sp) => [sp.id, sp]));
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (let y = 0; y < tm.rows; y++)
       for (let x = 0; x < tm.cols; x++) {
@@ -35,7 +36,7 @@ export function TilemapPanel() {
         ctx.fillStyle = (x + y) % 2 === 0 ? "#e8e5dc" : "#d8d5cc";
         ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
         if (!id) continue;
-        const sprite = project.sprites.find((sp) => sp.id === id);
+        const sprite = spriteById.get(id);
         if (!sprite) continue;
         const frame = sprite.frames[0];
         const scale = CELL / sprite.width;
@@ -100,6 +101,7 @@ export function TilemapPanel() {
           if (!cell) return;
           const erase = e.button === 2 || eraseMode;
           painting.current = erase ? "erase" : "paint";
+          useStore.getState().beginStroke();
           placeTile(cell[0], cell[1], erase ? null : selected);
         }}
         onPointerMove={(e) => {
@@ -108,7 +110,14 @@ export function TilemapPanel() {
           if (!cell) return;
           placeTile(cell[0], cell[1], painting.current === "erase" ? null : selected);
         }}
-        onPointerUp={() => (painting.current = false)}
+        onPointerUp={() => {
+          painting.current = false;
+          useStore.getState().endStroke();
+        }}
+        onPointerCancel={() => {
+          painting.current = false;
+          useStore.getState().endStroke();
+        }}
       />
       <div className="panel-row wrap">
         {tiles.map((t) => (
