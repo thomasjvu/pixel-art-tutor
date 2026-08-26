@@ -26,7 +26,7 @@ the highest-value future test targets.
 | 006 | Store correctness batch | P1 | S | 001, 003 | DONE (`174f1a4`, revised) |
 | 007 | Stroke coalescing + pointer robustness + tilemap redraw | P2 | M | 001, 003 | DONE (`8b22ac9`, revised) |
 | 008 | Color resolution consolidation + atomic palette adds | P2 | M | 005 | DONE (`58b26c6`) |
-| 009 | Strict TypeScript | P3 | M | 003; after 004–008 | HISTORICAL DONE; verify after reapply |
+| 009 | Strict TypeScript | P3 | M | 003; after 004–008 | DONE (`d189020`) |
 | 010 | `ensure_tilemap` agent tool | P2 | S | 001, 003 | TODO; reapply to current checkout |
 | 011 | `flood_fill`, `delete_frame`, `rename_sprite` tools | P2 | S | 001, 003, 005 | TODO; reapply to current checkout |
 | 012 | Human-visible Critique tab | P2 | S–M | 001, 003 | HISTORICAL DONE; present in current worktree |
