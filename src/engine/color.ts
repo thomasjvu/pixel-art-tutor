@@ -1,3 +1,7 @@
+import { TRANSPARENT } from "../types";
+
+const MAX_PALETTE = 64;
+
 export function normalizeHex(input: string): string | null {
   if (typeof input !== "string") return null;
   let s = input.trim().toLowerCase();
@@ -7,6 +11,30 @@ export function normalizeHex(input: string): string | null {
   }
   if (/^#[0-9a-f]{6}$/.test(s)) return s;
   return null;
+}
+
+export function resolveColorInto(
+  color: number | string | null | undefined,
+  project: { palette: string[] },
+): { index: number } | { error: string } {
+  if (color === null || color === undefined || color === "transparent")
+    return { index: TRANSPARENT };
+  if (typeof color === "number") {
+    if (!Number.isInteger(color) || color < -1 || color >= project.palette.length)
+      return { error: `color index ${color} is out of range (palette has ${project.palette.length} entries)` };
+    return { index: color };
+  }
+  if (typeof color !== "string")
+    return { error: "color must be a palette index, hex string, 'transparent', or null" };
+  const hex = normalizeHex(color);
+  if (!hex) return { error: `'${color}' is not a valid hex color` };
+  const existing = project.palette.indexOf(hex);
+  if (existing >= 0) return { index: existing };
+  if (project.palette.length >= MAX_PALETTE)
+    return { error: `palette is full (${MAX_PALETTE} colors max)` };
+  // Mutates project.palette when auto-adding a new color.
+  project.palette.push(hex);
+  return { index: project.palette.length - 1 };
 }
 
 export function hexToRgb(hex: string): [number, number, number] {

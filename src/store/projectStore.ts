@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Frame, PixelChange, Project, Sprite, SpriteKind } from "../types";
 import { TRANSPARENT } from "../types";
-import { normalizeHex } from "../engine/color";
+import { normalizeHex, resolveColorInto } from "../engine/color";
 import {
   bresenhamLine,
   clampRect,
@@ -87,11 +87,11 @@ interface ProjectState {
   setColorAt(x: number, y: number, colorIdx: number): void;
   drawLine(from: [number, number], to: [number, number], colorIdx: number): void;
   applyPixelChanges(changes: PixelChange[], spriteId?: string, frameIndex?: number, allFrames?: boolean): { applied: number; addedColors: number[] };
-  fillRegion(x: number, y: number, w: number, h: number, colorIdx: number, spriteId?: string, frameIndex?: number, allFrames?: boolean): number;
+  fillRegion(x: number, y: number, w: number, h: number, color: number | string | null, spriteId?: string, frameIndex?: number, allFrames?: boolean): number | { error: string };
   floodFillAt(x: number, y: number, colorIdx: number): void;
   clearFrame(spriteId?: string, frameIndex?: number): void;
-  transform(op: TransformOp, opts: { dx?: number; dy?: number; colorIdx?: number; frameIndices?: number[]; spriteId?: string }): string | null;
-  replaceColor(fromIdx: number, toIdx: number, spriteId?: string): number;
+  transform(op: TransformOp, opts: { dx?: number; dy?: number; color?: number | string | null; frameIndices?: number[]; spriteId?: string }): string | null;
+  replaceColor(from: number | string | null, to: number | string | null, spriteId?: string): number | { error: string };
 
   beginStroke(): void;
   endStroke(label?: string): void;
@@ -255,24 +255,11 @@ export const useStore = create<ProjectState>()((set, get) => {
         ? target.frames.map((_, i) => i)
         : [fi];
       for (const ch of changes) {
-        let colorIdx: number;
-        if (ch.color === null || ch.color === "transparent") colorIdx = TRANSPARENT;
-        else if (typeof ch.color === "number") {
-          if (!Number.isInteger(ch.color) || ch.color < -1 || ch.color >= next.palette.length) continue;
-          colorIdx = ch.color;
-        }
-        else {
-          const hex = normalizeHex(ch.color);
-          if (!hex) continue;
-          const existing = next.palette.indexOf(hex);
-          if (existing >= 0) colorIdx = existing;
-          else {
-            if (next.palette.length >= MAX_PALETTE) continue;
-            colorIdx = next.palette.length;
-            next.palette.push(hex);
-            addedColors.push(colorIdx);
-          }
-        }
+        const paletteLength = next.palette.length;
+        const resolved = resolveColorInto(ch.color ?? null, next);
+        if ("error" in resolved) continue;
+        const colorIdx = resolved.index;
+        if (next.palette.length > paletteLength) addedColors.push(colorIdx);
         for (const fi of frameIdxs) {
           const frame = target.frames[fi];
           if (!frame) continue;
@@ -285,7 +272,7 @@ export const useStore = create<ProjectState>()((set, get) => {
       return { applied, addedColors };
     },
 
-    fillRegion(x, y, w, h, colorIdx, spriteId, frameIndex, allFrames) {
+    fillRegion(x, y, w, h, color, spriteId, frameIndex, allFrames) {
       const t = get().resolveTarget(spriteId, frameIndex);
       if ("error" in t) return 0;
       const { sprite, frameIndex: fi } = t;
@@ -293,6 +280,9 @@ export const useStore = create<ProjectState>()((set, get) => {
       const target = next.sprites.find((s) => s.id === sprite.id)!;
       const r = clampRect(x, y, w, h, target.width, target.height);
       if (!r) return 0;
+      const resolved = resolveColorInto(color, next);
+      if ("error" in resolved) return { error: resolved.error };
+      const colorIdx = resolved.index;
       const fis = allFrames ? target.frames.map((_, i) => i) : [fi];
       let count = 0;
       for (const idx of fis) {
@@ -345,6 +335,13 @@ export const useStore = create<ProjectState>()((set, get) => {
         return "rotating a single frame would desync sprite dimensions; rotate all frames instead";
       }
 
+      let colorIdx = 0;
+      if (op === "outline") {
+        const resolved = resolveColorInto(opts.color ?? 0, next);
+        if ("error" in resolved) return resolved.error;
+        colorIdx = resolved.index;
+      }
+
       for (const fi of fis) {
         const frame: Frame = target.frames[fi];
         if (op === "flip_h") frame.pixels = flipH(frame.pixels, target.width, target.height);
@@ -361,8 +358,7 @@ export const useStore = create<ProjectState>()((set, get) => {
             opts.dy ?? 0,
           );
         } else if (op === "outline") {
-          const c = opts.colorIdx ?? 0;
-          frame.pixels = outlineOp(frame.pixels, target.width, target.height, c);
+          frame.pixels = outlineOp(frame.pixels, target.width, target.height, colorIdx);
         }
       }
       if (op === "rotate_90") {
@@ -373,11 +369,17 @@ export const useStore = create<ProjectState>()((set, get) => {
       return null;
     },
 
-    replaceColor(fromIdx, toIdx, spriteId) {
+    replaceColor(from, to, spriteId) {
       const { project } = get();
       const target = spriteId ? project.sprites.find((s) => s.id === spriteId) : null;
       const sprites = target ? [target] : project.sprites;
       const next = cloneProject(project);
+      const fromResolved = resolveColorInto(from, next);
+      if ("error" in fromResolved) return { error: fromResolved.error };
+      const toResolved = resolveColorInto(to, next);
+      if ("error" in toResolved) return { error: toResolved.error };
+      const fromIdx = fromResolved.index;
+      const toIdx = toResolved.index;
       let count = 0;
       for (const sp of sprites) {
         const nsp = next.sprites.find((s) => s.id === sp.id)!;

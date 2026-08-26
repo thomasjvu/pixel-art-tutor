@@ -251,21 +251,6 @@ export function registerTutorTools(): AbortController {
       execute: async ({ x, y, width, height, color, spriteId, frameIndex, allFrames }) => {
         const t = target(spriteId, frameIndex);
         if ("error" in t) return { ok: false, error: t.error };
-        let colorIdx: number;
-        if (color === null || color === "transparent") colorIdx = TRANSPARENT;
-        else if (typeof color === "number") colorIdx = Math.round(color);
-        else {
-          const hex = normalizeHex(color);
-          if (!hex) return { ok: false, error: `invalid color '${color}'` };
-          const st = useStore.getState();
-          const existing = st.project.palette.indexOf(hex);
-          if (existing >= 0) colorIdx = existing;
-          else {
-            const added = st.addPaletteColor(hex);
-            if ("error" in added) return { ok: false, error: added.error };
-            colorIdx = added.index;
-          }
-        }
         const rx = Math.round(x);
         const ry = Math.round(y);
         const rw = Math.round(width);
@@ -287,21 +272,26 @@ export function registerTutorTools(): AbortController {
           actionId,
           previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
         );
-        const n = useStore
+        const result = useStore
           .getState()
           .fillRegion(
             rx,
             ry,
             rw,
             rh,
-            colorIdx,
+            color,
             t.sprite.id,
             t.frameIndex,
             !!allFrames,
           );
-        finishAgentAction(actionId, n > 0 ? `Filled ${n} pixels` : "Nothing to fill");
-        log("fill_region", `${n} px on ${t.sprite.name}`);
-        return { ok: n > 0, filledPixels: n };
+        if (typeof result !== "number") {
+          finishAgentAction(actionId, result.error);
+          log("fill_region", `failed on ${t.sprite.name}`);
+          return { ok: false, error: result.error };
+        }
+        finishAgentAction(actionId, result > 0 ? `Filled ${result} pixels` : "Nothing to fill");
+        log("fill_region", `${result} px on ${t.sprite.name}`);
+        return { ok: result > 0, filledPixels: result };
       },
     }),
 
@@ -372,22 +362,6 @@ export function registerTutorTools(): AbortController {
         ) {
           return { ok: false, error: "dx/dy must be finite numbers" };
         }
-        let colorIdx: number | undefined;
-        if (op === "outline") {
-          if (typeof color === "number") colorIdx = Math.round(color);
-          else if (color === null || color === "transparent") colorIdx = 0;
-          else if (typeof color === "string") {
-            const hex = normalizeHex(color);
-            if (!hex) return { ok: false, error: `invalid color '${color}'` };
-            const found = st.project.palette.indexOf(hex);
-            if (found >= 0) colorIdx = found;
-            else {
-              const r = st.addPaletteColor(hex);
-              if ("error" in r) return { ok: false, error: r.error };
-              colorIdx = r.index;
-            }
-          }
-        }
         const resolved = target(spriteId);
         if ("error" in resolved) return { ok: false, error: resolved.error };
         const actionId = beginAgentAction({
@@ -404,7 +378,7 @@ export function registerTutorTools(): AbortController {
         const err = st.transform(op, {
           dx: typeof dx === "number" ? Math.round(dx) : undefined,
           dy: typeof dy === "number" ? Math.round(dy) : undefined,
-          colorIdx,
+          color,
           frameIndices: Array.isArray(frameIndices) ? frameIndices : undefined,
           spriteId,
         });
@@ -430,24 +404,6 @@ export function registerTutorTools(): AbortController {
       },
       execute: async ({ from, to, spriteId }) => {
         const st = useStore.getState();
-        function resolve(c: number | string | null): { index: number } | { error: string } {
-          if (c === null || c === "transparent") return { index: TRANSPARENT };
-          if (typeof c === "number") {
-            if (!Number.isInteger(c) || c < -1 || c >= st.project.palette.length)
-              return { error: "color index out of range" };
-            return { index: c };
-          }
-          const hex = normalizeHex(c);
-          if (!hex) return { error: `invalid color '${c}'` };
-          const found = st.project.palette.indexOf(hex);
-          if (found >= 0) return { index: found };
-          const r = st.addPaletteColor(hex);
-          return "error" in r ? { error: r.error } : { index: r.index };
-        }
-        const fromR = resolve(from);
-        if ("error" in fromR) return { ok: false, error: `from: ${fromR.error}` };
-        const toR = resolve(to);
-        if ("error" in toR) return { ok: false, error: `to: ${toR.error}` };
         const resolved = target(spriteId);
         if ("error" in resolved) return { ok: false, error: resolved.error };
         const actionId = beginAgentAction({
@@ -461,10 +417,15 @@ export function registerTutorTools(): AbortController {
           x: Math.floor(resolved.sprite.width / 2),
           y: Math.floor(resolved.sprite.height / 2),
         });
-        const n = st.replaceColor(fromR.index, toR.index, spriteId);
-        finishAgentAction(actionId, `Remapped ${n} pixel${n === 1 ? "" : "s"}`);
-        log("replace_color", `${n} px remapped`);
-        return { ok: true, replacedPixels: n };
+        const result = st.replaceColor(from, to, spriteId);
+        if (typeof result !== "number") {
+          finishAgentAction(actionId, result.error);
+          log("replace_color", "failed to remap colors");
+          return { ok: false, error: result.error };
+        }
+        finishAgentAction(actionId, `Remapped ${result} pixel${result === 1 ? "" : "s"}`);
+        log("replace_color", `${result} px remapped`);
+        return { ok: true, replacedPixels: result };
       },
     }),
 
