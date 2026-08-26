@@ -167,8 +167,10 @@ export const useStore = create<ProjectState>()((set, get) => {
 
     resolveTarget(spriteId, frameIndex) {
       const { project, activeSpriteId, activeFrameIndex } = get();
-      const sprite = project.sprites.find((s) => s.id === spriteId) ?? project.sprites[0];
-      if (!sprite) return { error: `sprite '${spriteId}' not found` };
+      const sprite = spriteId
+        ? project.sprites.find((s) => s.id === spriteId)
+        : (project.sprites.find((s) => s.id === activeSpriteId) ?? project.sprites[0]);
+      if (!sprite) return { error: `sprite '${spriteId ?? "(none)"}' not found` };
       let fi: number;
       if (frameIndex === undefined) {
         fi = sprite.id === activeSpriteId ? activeFrameIndex : 0;
@@ -298,8 +300,14 @@ export const useStore = create<ProjectState>()((set, get) => {
       const target = next.sprites.find((s) => s.id === sprite.id)!;
       const fis =
         opts.frameIndices && opts.frameIndices.length
-          ? opts.frameIndices.filter((i) => target.frames[i])
+          ? [...new Set(opts.frameIndices)].filter((i) => target.frames[i])
           : target.frames.map((_, i) => i);
+      const newW = target.height;
+      const newH = target.width;
+
+      if (op === "rotate_90" && fis.length !== target.frames.length) {
+        return "rotating a single frame would desync sprite dimensions; rotate all frames instead";
+      }
 
       for (const fi of fis) {
         const frame: Frame = target.frames[fi];
@@ -308,13 +316,6 @@ export const useStore = create<ProjectState>()((set, get) => {
         else if (op === "rotate_90") {
           const r = rotate90(frame.pixels, target.width, target.height);
           frame.pixels = r.pixels;
-          // rotation changes dimensions; keep all frames consistent by resizing whole sprite only when rotating all
-          if (fis.length === target.frames.length) {
-            target.width = r.w;
-            target.height = r.h;
-          } else {
-            return "rotating a single frame would desync sprite dimensions; rotate all frames instead";
-          }
         } else if (op === "shift") {
           frame.pixels = shiftWrap(
             frame.pixels,
@@ -327,6 +328,10 @@ export const useStore = create<ProjectState>()((set, get) => {
           const c = opts.colorIdx ?? 0;
           frame.pixels = outlineOp(frame.pixels, target.width, target.height, c);
         }
+      }
+      if (op === "rotate_90") {
+        target.width = newW;
+        target.height = newH;
       }
       commit(next);
       return null;
@@ -410,6 +415,9 @@ export const useStore = create<ProjectState>()((set, get) => {
       if (project.sprites.length <= 1) return;
       const next = cloneProject(project);
       next.sprites = next.sprites.filter((s) => s.id !== id);
+      if (next.tilemap) {
+        next.tilemap.cells = next.tilemap.cells.map((c) => (c === id ? null : c));
+      }
       const extra: Partial<ProjectState> = {};
       if (get().activeSpriteId === id) extra.activeSpriteId = next.sprites[0].id;
       if (get().selectedTileId === id) extra.selectedTileId = null;
@@ -482,16 +490,18 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     deleteFrame(frameIndex, spriteId) {
-      const t = get().resolveTarget(spriteId);
+      const t = get().resolveTarget(spriteId, frameIndex);
       if ("error" in t) return false;
-      const { sprite } = t;
+      const { sprite, frameIndex: fi } = t;
       if (sprite.frames.length <= 1) return false;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
-      target.frames.splice(frameIndex, 1);
-      commit(next, {
-        activeFrameIndex: Math.min(get().activeFrameIndex, target.frames.length - 1),
-      });
+      target.frames.splice(fi, 1);
+      const extra: Partial<ProjectState> = {};
+      if (sprite.id === get().activeSpriteId) {
+        extra.activeFrameIndex = Math.min(get().activeFrameIndex, target.frames.length - 1);
+      }
+      commit(next, extra);
       return true;
     },
 
