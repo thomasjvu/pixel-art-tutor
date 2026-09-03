@@ -5,13 +5,14 @@ import { useStore } from "../store/projectStore";
 import { useUi } from "../store/uiStore";
 import { redoProject, undoProject } from "../realtime/roomClient";
 import type { ToolName } from "../store/editorStore";
+import { formatShortcut, usePreferences, type KeymapAction } from "../store/preferencesStore";
 
-const TOOLS: { id: ToolName; icon: string; label: string; key: string }[] = [
-  { id: "pencil", icon: "mingcute:pencil", label: "Pencil", key: "B" },
-  { id: "eraser", icon: "mingcute:eraser", label: "Eraser", key: "E" },
-  { id: "fill", icon: "mingcute:bucket", label: "Fill", key: "G" },
-  { id: "picker", icon: "mingcute:eye", label: "Pick", key: "I" },
-  { id: "select", icon: "mingcute:cursor", label: "Select", key: "V" },
+const TOOLS: { id: ToolName; icon: string; label: string; action: KeymapAction }[] = [
+  { id: "pencil", icon: "mingcute:pencil", label: "Pencil", action: "pencil" },
+  { id: "eraser", icon: "mingcute:eraser", label: "Eraser", action: "eraser" },
+  { id: "fill", icon: "mingcute:bucket", label: "Fill", action: "fill" },
+  { id: "picker", icon: "mingcute:eye", label: "Pick", action: "picker" },
+  { id: "select", icon: "mingcute:cursor", label: "Select", action: "select" },
 ];
 
 export function Toolbar() {
@@ -43,6 +44,7 @@ export function Toolbar() {
   const sharedRoom = roomStatus === "connected";
   const colorInputRef = useRef<HTMLInputElement>(null);
   const currentHex = /^#[0-9a-f]{6}$/i.test(palette[colorIdx] ?? "") ? (palette[colorIdx] as string) : "#38b764";
+  const keymap = usePreferences((s) => s.keymap);
 
   function pickCustomColor(hex: string) {
     const result = useStore.getState().addPaletteColor(hex);
@@ -68,12 +70,12 @@ export function Toolbar() {
             key={item.id}
             className={tool === item.id ? "tool-btn active" : "tool-btn"}
             onClick={() => setTool(item.id)}
-            title={`${item.label} (${item.key}) — right-click always erases`}
+            title={`${item.label} (${formatShortcut(keymap[item.action])}) — right-click always erases`}
             aria-label={`${item.label} tool`}
             aria-pressed={tool === item.id}
           >
             <Icon icon={item.icon} />
-            <span className="tool-key">{item.key}</span>
+            <span className="tool-key">{formatShortcut(keymap[item.action])}</span>
           </button>
         ))}
       </div>
@@ -98,6 +100,7 @@ export function Toolbar() {
         >
           <Icon icon="mingcute:grid-2" />
           <span>Grid</span>
+          <span className="tool-shortcut">{formatShortcut(keymap.toggleGrid)}</span>
         </button>
         <button
           className={onion ? "tool-toggle active" : "tool-toggle"}
@@ -108,6 +111,7 @@ export function Toolbar() {
         >
           <Icon icon="mingcute:layers" />
           <span>Onion</span>
+          <span className="tool-shortcut">{formatShortcut(keymap.toggleOnion)}</span>
         </button>
         <button
           className={pixelPerfect ? "tool-toggle active" : "tool-toggle"}
@@ -117,6 +121,7 @@ export function Toolbar() {
         >
           <Icon icon="mingcute:magic-2" />
           <span>Pixel perfect</span>
+          <span className="tool-shortcut">{formatShortcut(keymap.togglePixelPerfect)}</span>
         </button>
         <button
           className={shadingMode ? "tool-toggle active" : "tool-toggle"}
@@ -126,6 +131,7 @@ export function Toolbar() {
         >
           <Icon icon="mingcute:sun" />
           <span>Shading ink</span>
+          <span className="tool-shortcut">{formatShortcut(keymap.toggleShading)}</span>
         </button>
         <button
           className={tiledMode ? "tool-toggle active" : "tool-toggle"}
@@ -135,6 +141,7 @@ export function Toolbar() {
         >
           <Icon icon="mingcute:grid-2" />
           <span>Tiled</span>
+          <span className="tool-shortcut">{formatShortcut(keymap.toggleTiled)}</span>
         </button>
         <button
           className={brushMode !== "solid" ? "tool-toggle active" : "tool-toggle"}
@@ -144,6 +151,7 @@ export function Toolbar() {
         >
           <Icon icon="mingcute:magic-2" />
           <span>{brushMode === "dots" ? "Dot brush" : "Dither brush"}</span>
+          <span className="tool-shortcut">{formatShortcut(keymap.toggleBrush)}</span>
         </button>
       </div>
 

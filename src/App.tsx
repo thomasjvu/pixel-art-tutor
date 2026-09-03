@@ -12,6 +12,8 @@ import { TimelinePanel } from "./components/TimelinePanel";
 import { ProjectMenu } from "./components/ProjectMenu";
 import { ProjectTabs } from "./components/ProjectTabs";
 import { StatusBar } from "./components/StatusBar";
+import { PreferencesDialog } from "./components/PreferencesDialog";
+import { ShareDialog } from "./components/ShareDialog";
 import { RoomBridge } from "./components/RoomBridge";
 import { RoomPanel } from "./components/RoomPanel";
 import { TutorialOverlay } from "./components/TutorialOverlay";
@@ -24,6 +26,7 @@ import { useEditor } from "./store/editorStore";
 import { useStore } from "./store/projectStore";
 import { redoProject, undoProject } from "./realtime/roomClient";
 import { createBlankProjectTab } from "./store/workspaceActions";
+import { matchesShortcut, usePreferences } from "./store/preferencesStore";
 import { spriteLayers } from "./types";
 
 type Tab = "sprites" | "palette" | "frames" | "map" | "critique" | "agent" | "room";
@@ -40,13 +43,8 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("sprites");
-  const projectTitleRef = useRef<HTMLInputElement>(null);
   const mcpStatus = useUi((s) => s.mcpStatus);
-  const roomStatus = useUi((s) => s.roomStatus);
-  const roomPeers = useUi((s) => Object.keys(s.roomPeers).length);
   const projectName = useStore((s) => s.project.name);
-  const spriteCount = useStore((s) => s.project.sprites.length);
-  const renameProject = useStore((s) => s.renameProject);
   const toolbarOpen = useEditor((s) => s.toolbarOpen);
   const sidebarOpen = useEditor((s) => s.sidebarOpen);
   const hydratedShareParam = useRef<string | null>(null);
@@ -69,9 +67,6 @@ function AppContent() {
 
   useEffect(() => {
     document.title = `${projectName} · Pixel Art Tutor`;
-    if (projectTitleRef.current && document.activeElement !== projectTitleRef.current) {
-      projectTitleRef.current.value = projectName;
-    }
   }, [projectName]);
 
   useEffect(() => {
@@ -108,12 +103,66 @@ function AppContent() {
         return;
       }
       const editor = useEditor.getState();
+      const keymap = usePreferences.getState().keymap;
+      if (matchesShortcut(event, keymap.pencil)) {
+        event.preventDefault();
+        editor.setTool("pencil");
+        return;
+      }
+      if (matchesShortcut(event, keymap.eraser)) {
+        event.preventDefault();
+        editor.setTool("eraser");
+        return;
+      }
+      if (matchesShortcut(event, keymap.fill)) {
+        event.preventDefault();
+        editor.setTool("fill");
+        return;
+      }
+      if (matchesShortcut(event, keymap.picker)) {
+        event.preventDefault();
+        editor.setTool("picker");
+        return;
+      }
+      if (matchesShortcut(event, keymap.select)) {
+        event.preventDefault();
+        editor.setTool("select");
+        return;
+      }
+      if (!event.repeat && matchesShortcut(event, keymap.toggleGrid)) {
+        event.preventDefault();
+        editor.setShowGrid(!editor.showGrid);
+        return;
+      }
+      if (!event.repeat && matchesShortcut(event, keymap.toggleOnion)) {
+        const onionAvailable = (useStore.getState().activeSprite()?.frames.length ?? 0) > 1;
+        if (onionAvailable) {
+          event.preventDefault();
+          editor.toggleOnion();
+        }
+        return;
+      }
+      if (!event.repeat && matchesShortcut(event, keymap.togglePixelPerfect)) {
+        event.preventDefault();
+        editor.setPixelPerfect(!editor.pixelPerfect);
+        return;
+      }
+      if (!event.repeat && matchesShortcut(event, keymap.toggleShading)) {
+        event.preventDefault();
+        editor.setShadingMode(!editor.shadingMode);
+        return;
+      }
+      if (!event.repeat && matchesShortcut(event, keymap.toggleTiled)) {
+        event.preventDefault();
+        editor.setTiledMode(!editor.tiledMode);
+        return;
+      }
+      if (!event.repeat && matchesShortcut(event, keymap.toggleBrush)) {
+        event.preventDefault();
+        editor.setBrushMode(editor.brushMode === "solid" ? "checker" : "solid");
+        return;
+      }
       switch (event.key.toLowerCase()) {
-        case "b": editor.setTool("pencil"); break;
-        case "e": editor.setTool("eraser"); break;
-        case "g": editor.setTool("fill"); break;
-        case "i": editor.setTool("picker"); break;
-        case "v": editor.setTool("select"); break;
         case "escape": {
           if (editor.selection) {
             editor.setSelection(null);
@@ -172,85 +221,14 @@ function AppContent() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  function finishProjectTitle(input: HTMLInputElement) {
-    const next = input.value.trim();
-    if (next) renameProject(next);
-    else input.value = projectName;
-  }
-
   return (
     <div className="app">
       <RoomBridge />
-      <header className="app-header">
-        <div className="window-dots" aria-hidden="true">
-          <span className="window-dot pink" />
-          <span className="window-dot yellow" />
-          <span className="window-dot mint" />
-        </div>
-        <div className="brand-mark" aria-hidden="true">
-          <svg width="28" height="28" viewBox="0 0 8 8" shapeRendering="crispEdges">
-            <rect width="8" height="8" fill="#000" />
-            <rect x="1" y="1" width="2" height="2" fill="#ff2e2e" />
-            <rect x="5" y="1" width="2" height="2" fill="#ffee00" />
-            <rect x="3" y="3" width="2" height="2" fill="#fff" />
-            <rect x="1" y="5" width="2" height="2" fill="#fff" />
-            <rect x="5" y="5" width="2" height="2" fill="#ff2e2e" />
-          </svg>
-        </div>
-        <div className="brand-copy">
-          <strong>PIXEL PATCH</strong>
-          <span>tiny art studio</span>
-        </div>
-        <div className="header-divider" />
-        <div className="project-title-wrap">
-          <input
-            className="project-title"
-            ref={projectTitleRef}
-            defaultValue={projectName}
-            onBlur={(event) => finishProjectTitle(event.currentTarget)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-              }
-              if (event.key === "Escape") {
-                event.currentTarget.value = projectName;
-                event.currentTarget.blur();
-              }
-            }}
-            aria-label="Project name"
-          />
-          <span className="project-subtitle">
-            {spriteCount} sprite{spriteCount === 1 ? "" : "s"}
-          </span>
-        </div>
-        <div className="header-spacer" />
-        <div className="header-status">
-          <span className={`status-light ${mcpStatus === "ready" ? "ready" : ""}`} />
-          <span>{mcpStatus === "ready" ? "Agent ready" : "Local mode"}</span>
-          <span className="header-status-divider" />
-          <span className={`status-light room-light ${roomStatus === "connected" ? "ready" : ""}`} />
-          <span>
-            {roomStatus === "connected"
-              ? `${roomPeers + 1} in room`
-              : roomStatus === "connecting"
-                ? "Joining room"
-                : "Solo studio"}
-          </span>
-        </div>
-        <button
-          className="header-icon-btn"
-          title="Open agent help"
-          aria-label="Open agent help"
-          onClick={() => setTab("agent")}
-        >
-          <Icon icon="mingcute:question" />
-        </button>
-      </header>
 
       <ProjectMenu />
       <ProjectTabs />
 
-      <main className="workspace">
+      <main className={`workspace ${toolbarOpen ? "" : "toolbar-collapsed"} ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
         {!toolbarOpen ? (
           <button
             className="rail-tab"
@@ -343,7 +321,9 @@ function AppContent() {
         )}
       </main>
 
-      <StatusBar />
+      <StatusBar onOpenAgent={() => setTab("agent")} />
+      <PreferencesDialog />
+      <ShareDialog />
       <TutorialOverlay />
     </div>
   );

@@ -78,6 +78,8 @@ interface UiState {
   activeRooms: ActiveRoomListing[];
   roomDirectoryStatus: RoomDirectoryStatus;
   roomDirectoryError: string | null;
+  preferencesOpen: boolean;
+  shareOpen: boolean;
   roomCanUndo: boolean;
   roomCanRedo: boolean;
   roomSyncBlocked: boolean;
@@ -116,6 +118,8 @@ interface UiState {
     status?: RoomDirectoryStatus,
     error?: string | null,
   ): void;
+  setPreferencesOpen(open: boolean): void;
+  setShareOpen(open: boolean): void;
   setRoomHistory(canUndo: boolean, canRedo: boolean): void;
 }
 
@@ -167,6 +171,8 @@ export const useUi = create<UiState>()((set) => ({
   activeRooms: [],
   roomDirectoryStatus: "idle",
   roomDirectoryError: null,
+  preferencesOpen: false,
+  shareOpen: false,
   roomCanUndo: false,
   roomCanRedo: false,
   roomSyncBlocked: false,
@@ -257,5 +263,7 @@ export const useUi = create<UiState>()((set) => ({
     })),
   setActiveRooms: (activeRooms, roomDirectoryStatus = "ready", roomDirectoryError = null) =>
     set({ activeRooms, roomDirectoryStatus, roomDirectoryError }),
+  setPreferencesOpen: (preferencesOpen) => set({ preferencesOpen }),
+  setShareOpen: (shareOpen) => set({ shareOpen }),
   setRoomHistory: (roomCanUndo, roomCanRedo) => set({ roomCanUndo, roomCanRedo }),
 }));

@@ -4,8 +4,8 @@ import { Icon } from "./Icon";
 import { SpriteThumb } from "./SpriteThumb";
 import type { Sprite, SpriteKind } from "../types";
 import { downloadText } from "../engine/exportImage";
-import { projectHashFromJson } from "../engine/share";
 import { MAX_PROJECT_JSON_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
+import { useUi } from "../store/uiStore";
 
 /** SubmitEvent extensions from the WebMCP Declarative API */
 interface WebMCPSubmitEvent extends React.FormEvent<HTMLFormElement> {
@@ -303,28 +303,13 @@ function SpriteRow({
 }
 
 function ShareButton() {
-  const [copied, setCopied] = useState(false);
+  const setShareOpen = useUi((state) => state.setShareOpen);
   return (
     <button
       className="text-btn"
-      onClick={async () => {
-        const st = useStore.getState();
-        const hash = projectHashFromJson(st.exportProject());
-        if (!hash) {
-          alert("This project is too large to fit in a share link. Save the project JSON instead.");
-          return;
-        }
-        const url = `${location.origin}${location.pathname}${hash}`;
-        try {
-          await navigator.clipboard.writeText(url);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          alert(`Share link (copy manually):\n${url}`);
-        }
-      }}
+      onClick={() => setShareOpen(true)}
     >
-      {copied ? "Copied!" : "Share link"}
+      Share…
     </button>
   );
 }

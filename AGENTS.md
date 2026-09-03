@@ -112,8 +112,18 @@ occurred.
   palette reordering remaps stored indices so pixels keep their visible colors.
 - Canvas zoom is an integer pixels-per-cell scale from 1 to 48. The canvas backing store and
   CSS box use the same scale; oversized views scroll inside the stage.
+- The pixel grid and onion skin are off by default so a new canvas starts clean; both remain
+  available from the toolbar, View menu, timeline, and editor tools.
+- Tool and editor-mode shortcuts are editable in Edit > Preferences and persist per browser.
+  Defaults are B/E/G/I/V for pencil, eraser, fill, picker, and select; Shift+G/O/P/S/T/D
+  toggle grid, onion skin, pixel-perfect stroke, shading ink, tiled preview, and dither brush.
+- The timeline reserves 330px on desktop (370px on compact layouts) so roughly two layer rows
+  remain visible. Hiding the toolbar or inspector collapses that rail to a 26px reveal tab and
+  gives its saved space back to the center editor.
 
-The File menu imports one or multiple raster images as sprite cels. The Export menu includes current-frame PNG, horizontal sheet, PNG frame sequence, animated GIF,
+The File menu imports one or multiple raster images as sprite cels. Share > Share project creates
+a lightweight project permalink and offers the device share sheet plus X, Reddit, Threads,
+Instagram-friendly copy, WhatsApp, and email handoffs; nothing is posted automatically. The Export menu includes current-frame PNG, horizontal sheet, PNG frame sequence, animated GIF,
 texture atlas + JSON, Godot, Unity, and whole-project pack paths. Local autosave keeps a
 recoverable copy when a stored project is rejected; the browser app does not pretend to be an
 Aseprite CLI.

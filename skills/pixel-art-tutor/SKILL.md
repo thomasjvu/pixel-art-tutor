@@ -117,6 +117,13 @@ extension for manual calls.
    normal/multiply/screen/overlay blend modes are editable in the timeline. `transform_sprite`
    also accepts `rotate` for nearest-neighbor RotSprite-style rotation without resampling the
    sprite dimensions.
+   The pixel grid and onion skin start off by default and can be enabled from the editor
+   controls when they are useful as references.
+   Tool and editor-mode hotkeys are configurable in Edit > Preferences and persist locally.
+   The defaults are B/E/G/I/V for the core tools plus Shift+G/O/P/S/T/D for grid, onion,
+   pixel-perfect, shading, tiled preview, and dither brush. The timeline is intentionally tall
+   enough to keep about two layer rows visible; collapsed toolbar/inspector rails return their
+   space to the center canvas.
 7. Tiles: `add_sprite` with `kind:"tile"`, `ensure_tilemap`, `place_tile` /
    `fill_tiles`, `get_tilemap` to read the map as ASCII.
 8. Fresh starts and guides: `new_canvas` (needs `confirm:true`) resets to a
@@ -137,7 +144,9 @@ extension for manual calls.
    `clear_frame`, `delete_frame` (needs `confirm:true`, refuses the last
    frame), `export_project` / `import_project`.
 
-The File menu accepts one or multiple raster images as sprite cels. The Export menu can produce individual PNG frames, an animated GIF, a texture atlas + JSON,
+The File menu accepts one or multiple raster images as sprite cels. Share > Share project creates
+a project permalink with native device sharing and handoffs for X, Reddit, Threads, Instagram,
+WhatsApp, and email; Instagram uses copy/native sharing because it has no web composer. The Export menu can produce individual PNG frames, an animated GIF, a texture atlas + JSON,
 engine packs, and the project JSON used by external asset-pipeline scripts. Data recovery is
 available from the status bar when local storage rejects a project; actual Aseprite CLI
 conversion remains an external pipeline concern.

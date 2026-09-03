@@ -19,6 +19,7 @@ import {
 import { buildGamePackManifest, gamePackSpriteFiles } from "../engine/exportManifest";
 import { MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
 import { createBlankProjectTab } from "../store/workspaceActions";
+import { formatShortcut, usePreferences } from "../store/preferencesStore";
 import { spriteLayers } from "../types";
 
 function closeMenu(target: HTMLElement) {
@@ -37,7 +38,8 @@ export function ProjectMenu() {
   const roomStatus = useUi((s) => s.roomStatus);
   const roomCanUndo = useUi((s) => s.roomCanUndo);
   const roomCanRedo = useUi((s) => s.roomCanRedo);
-  const storageStatus = useStore((s) => s.storageStatus);
+  const setPreferencesOpen = useUi((s) => s.setPreferencesOpen);
+  const setShareOpen = useUi((s) => s.setShareOpen);
   const resetProject = useStore((s) => s.resetProject);
   const showGrid = useEditor((s) => s.showGrid);
   const setShowGrid = useEditor((s) => s.setShowGrid);
@@ -45,17 +47,7 @@ export function ProjectMenu() {
   const toggleOnion = useEditor((s) => s.toggleOnion);
   const onionAvailable = useStore((s) => (s.activeSprite()?.frames.length ?? 0) > 1);
   const playbackTagId = useEditor((s) => s.playbackTagId);
-  const storageHint =
-    storageStatus === "saved"
-      ? "Autosaved locally"
-      : storageStatus === "pending"
-        ? "Saving locally…"
-        : storageStatus === "too_large"
-          ? "Local save needs a backup"
-          : storageStatus === "unavailable"
-            ? "Local autosave unavailable"
-            : "Local save not yet complete";
-
+  const keymap = usePreferences((s) => s.keymap);
   function exportProject() {
     const state = useStore.getState();
     downloadText(
@@ -386,6 +378,17 @@ export function ProjectMenu() {
               <span>Redo</span>
               <kbd>⇧⌘Z</kbd>
             </button>
+            <div className="menu-divider" />
+            <button
+              className="menu-item"
+              onClick={(event) => {
+                setPreferencesOpen(true);
+                closeMenu(event.currentTarget);
+              }}
+            >
+              <Icon icon="mingcute:magic-2" />
+              <span>Preferences…</span>
+            </button>
           </div>
         </details>
 
@@ -407,6 +410,7 @@ export function ProjectMenu() {
             >
               <Icon icon="mingcute:grid-2" />
               <span>Pixel grid</span>
+              <kbd>{formatShortcut(keymap.toggleGrid)}</kbd>
               <span className="menu-check">{showGrid ? "✓" : ""}</span>
             </button>
             <button
@@ -418,8 +422,34 @@ export function ProjectMenu() {
             >
               <Icon icon="mingcute:layers" />
               <span>Onion skin</span>
+              <kbd>{formatShortcut(keymap.toggleOnion)}</kbd>
               <span className="menu-check">{onion ? "✓" : ""}</span>
             </button>
+          </div>
+        </details>
+
+        <details
+          className="menu-popover share-popover"
+          onToggle={(event) => {
+            if (!event.currentTarget.open) return;
+            document.querySelectorAll(".menu-popover").forEach((menu) => {
+              if (menu !== event.currentTarget) menu.removeAttribute("open");
+            });
+          }}
+        >
+          <summary>Share</summary>
+          <div className="menu-panel">
+            <button
+              className="menu-item"
+              onClick={(event) => {
+                setShareOpen(true);
+                closeMenu(event.currentTarget);
+              }}
+            >
+              <Icon icon="mingcute:heart" />
+              <span>Share project…</span>
+            </button>
+            <p className="menu-note">Copy a project link or open a social share composer.</p>
           </div>
         </details>
 
@@ -479,14 +509,6 @@ export function ProjectMenu() {
             <p className="menu-note">Downloads one manifest and one horizontal sheet per sprite.</p>
           </div>
         </details>
-      </div>
-      <div className="menu-hint">
-        <span
-          className="menu-dot"
-          style={{ background: storageStatus === "saved" ? "var(--mint)" : "var(--red)" }}
-        /> {storageHint}
-        <span className="menu-divider-vertical" />
-        <span>Right-click erases</span>
       </div>
     </nav>
   );
