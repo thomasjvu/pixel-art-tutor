@@ -141,23 +141,24 @@ export function boundingBox(pixels: number[], w: number, h: number) {
   return { minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
-const DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
+/** One printable symbol per palette index. The first 36 symbols preserve the original base-36 format. */
+export const PIXEL_SYMBOLS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 
-/** frame -> rows of chars. '.' = transparent, else base36 palette index */
+/** frame -> rows of chars. '.' = transparent, else a symbol for the palette index */
 export function pixelsToRowsWithWidth(pixels: number[], w: number): string[] {
   const rows: string[] = [];
   for (let i = 0; i < pixels.length; i += w) {
     let row = "";
     for (let j = i; j < i + w; j++) {
       const p = pixels[j];
-      row += p === TRANSPARENT ? "." : DIGITS[p] ?? "?";
+      row += p === TRANSPARENT ? "." : PIXEL_SYMBOLS[p] ?? "?";
     }
     rows.push(row);
   }
   return rows;
 }
 
-/** parse ASCII rows into pixels. unknown chars -> TRANSPARENT. autoAdd adds hex colors via callback and returns mapping */
+/** Parse ASCII rows into pixels. Unknown chars become transparent and are reported as errors. */
 export function rowsToPixels(
   rows: string[],
 ): { pixels: number[]; width: number; height: number; errors: string[] } {
@@ -174,8 +175,8 @@ export function rowsToPixels(
         pixels.push(TRANSPARENT);
         continue;
       }
-      const idx = parseInt(ch, 36);
-      if (Number.isNaN(idx)) {
+      const idx = PIXEL_SYMBOLS.indexOf(ch);
+      if (idx < 0) {
         errors.push(`unknown char '${ch}' at ${x},${y}`);
         pixels.push(TRANSPARENT);
       } else pixels.push(idx);

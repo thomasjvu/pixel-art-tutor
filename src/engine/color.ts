@@ -1,6 +1,5 @@
 import { TRANSPARENT } from "../types";
-
-const MAX_PALETTE = 64;
+import { MAX_PALETTE_COLORS } from "../projectLimits";
 
 export function normalizeHex(input: string): string | null {
   if (typeof input !== "string") return null;
@@ -30,8 +29,8 @@ export function resolveColorInto(
   if (!hex) return { error: `'${color}' is not a valid hex color` };
   const existing = project.palette.indexOf(hex);
   if (existing >= 0) return { index: existing };
-  if (project.palette.length >= MAX_PALETTE)
-    return { error: `palette is full (${MAX_PALETTE} colors max)` };
+  if (project.palette.length >= MAX_PALETTE_COLORS)
+    return { error: `palette is full (${MAX_PALETTE_COLORS} colors max)` };
   // Mutates project.palette when auto-adding a new color.
   project.palette.push(hex);
   return { index: project.palette.length - 1 };

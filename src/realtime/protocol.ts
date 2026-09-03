@@ -1,4 +1,5 @@
 import type { Frame, Project, Sprite, TilemapData } from "../types";
+import { isCanonicalProject } from "../engine/validate";
 
 export const ROOM_PROTOCOL_VERSION = 1 as const;
 
@@ -124,79 +125,54 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isPixel(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= -1 && value <= 63;
-}
-
-function isFrame(value: unknown, pixelCount: number): value is Frame {
+function isPresence(value: unknown): value is RoomPresence {
   if (!isRecord(value)) return false;
+  const cursor = value.cursor;
+  const validCursor =
+    cursor === null ||
+    (isRecord(cursor) && Number.isInteger(cursor.x) && Number.isInteger(cursor.y));
   return (
     typeof value.id === "string" &&
     value.id.length > 0 &&
-    Array.isArray(value.pixels) &&
-    value.pixels.length === pixelCount &&
-    value.pixels.every(isPixel)
+    typeof value.name === "string" &&
+    typeof value.kind === "string" &&
+    (value.kind === "human" || value.kind === "agent") &&
+    typeof value.color === "string" &&
+    /^#[0-9a-f]{6}$/i.test(value.color) &&
+    typeof value.status === "string" &&
+    ["idle", "thinking", "drawing", "filling", "transforming", "reviewing", "done"].includes(value.status) &&
+    typeof value.tool === "string" &&
+    (value.spriteId === null || typeof value.spriteId === "string") &&
+    Number.isInteger(value.frameIndex) &&
+    (value.frameIndex as number) >= 0 &&
+    (value.frameIndex as number) <= 31 &&
+    validCursor &&
+    typeof value.progress === "number" &&
+    Number.isFinite(value.progress) &&
+    value.progress >= 0 &&
+    value.progress <= 1 &&
+    typeof value.message === "string" &&
+    typeof value.updatedAt === "number" &&
+    Number.isFinite(value.updatedAt)
   );
 }
 
-function isSprite(value: unknown): value is Sprite {
+function isOperationSummary(value: unknown): value is RoomOperationSummary {
   if (!isRecord(value)) return false;
-  const width = value.width;
-  const height = value.height;
-  if (
-    typeof value.id !== "string" ||
-    !value.id ||
-    typeof value.name !== "string" ||
-    value.name.length > 128 ||
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    (width as number) < 1 ||
-    (width as number) > 64 ||
-    (height as number) < 1 ||
-    (height as number) > 64 ||
-    !["character", "item", "tile"].includes(String(value.kind)) ||
-    !Array.isArray(value.frames) ||
-    value.frames.length < 1 ||
-    value.frames.length > 32
-  ) {
-    return false;
-  }
-  return value.frames.every((frame) => isFrame(frame, (width as number) * (height as number)));
-}
-
-function isTilemap(value: unknown): value is TilemapData | null {
-  if (value === null) return true;
-  if (!isRecord(value)) return false;
-  const cols = value.cols;
-  const rows = value.rows;
   return (
-    Number.isInteger(cols) &&
-    Number.isInteger(rows) &&
-    (cols as number) >= 2 &&
-    (cols as number) <= 64 &&
-    (rows as number) >= 2 &&
-    (rows as number) <= 64 &&
-    Array.isArray(value.cells) &&
-    value.cells.length === (cols as number) * (rows as number) &&
-    value.cells.every((cell) => cell === null || (typeof cell === "string" && cell.length <= 128))
+    typeof value.operationId === "string" &&
+    value.operationId.length > 0 &&
+    typeof value.actorId === "string" &&
+    value.actorId.length > 0 &&
+    typeof value.label === "string" &&
+    (value.kind === "edit" || value.kind === "undo" || value.kind === "redo") &&
+    (value.undoOf === undefined || typeof value.undoOf === "string") &&
+    (value.redoOf === undefined || typeof value.redoOf === "string")
   );
 }
 
 export function isProject(value: unknown): value is Project {
-  if (!isRecord(value)) return false;
-  return (
-    value.schemaVersion === 1 &&
-    typeof value.name === "string" &&
-    value.name.length <= 128 &&
-    Array.isArray(value.palette) &&
-    value.palette.length <= 64 &&
-    value.palette.every((color) => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color)) &&
-    Array.isArray(value.sprites) &&
-    value.sprites.length >= 1 &&
-    value.sprites.length <= 128 &&
-    value.sprites.every(isSprite) &&
-    isTilemap(value.tilemap)
-  );
+  return isCanonicalProject(value);
 }
 
 export function cloneProject(project: Project): Project {
@@ -317,5 +293,35 @@ export function parseRoomMessage(raw: unknown): RoomServerMessage | null {
   if (!isRecord(raw) || raw.protocol !== ROOM_PROTOCOL_VERSION || typeof raw.type !== "string") {
     return null;
   }
-  return raw as unknown as RoomServerMessage;
+  switch (raw.type) {
+    case "welcome":
+      return typeof raw.roomId === "string" &&
+        Number.isInteger(raw.seq) &&
+        (raw.project === null || isProject(raw.project)) &&
+        Array.isArray(raw.peers) &&
+        raw.peers.every(isPresence) &&
+        (raw.latestOperation === null || isOperationSummary(raw.latestOperation))
+        ? (raw as unknown as RoomWelcomeMessage)
+        : null;
+    case "presence":
+      return isPresence(raw.presence) ? (raw as unknown as RoomPresenceMessage) : null;
+    case "presence_state":
+      return Array.isArray(raw.peers) && raw.peers.every(isPresence)
+        ? (raw as unknown as RoomPresenceStateMessage)
+        : null;
+    case "operation":
+      return Number.isInteger(raw.seq) &&
+        isOperationSummary(raw) &&
+        isProject(raw.project)
+        ? (raw as unknown as RoomOperationBroadcast)
+        : null;
+    case "room_error":
+      return typeof raw.message === "string" &&
+        (raw.project === undefined || isProject(raw.project)) &&
+        (raw.seq === undefined || Number.isInteger(raw.seq))
+        ? (raw as unknown as RoomErrorMessage)
+        : null;
+    default:
+      return null;
+  }
 }

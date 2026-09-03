@@ -36,7 +36,7 @@ Rules:
 ## Settled decisions (do not relitigate in drive-by edits)
 
 - Tools return `{ok:false, error}` objects instead of throwing.
-- Pixel data is ASCII rows of base-36 palette indices for agent token economy.
+- Pixel data is ASCII rows using a compact 64-symbol palette alphabet; the first 36 symbols preserve base-36 compatibility.
 - Project persists to localStorage key `pixel-art-tutor.project.v1`.
 - Undo history is in-memory only.
 - Tool registrations are tied to an AbortController so React unmount unregisters.

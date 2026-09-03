@@ -16,6 +16,17 @@ import {
 } from "../engine/pixels";
 import { blankProject, createStarterProject } from "../engine/seed";
 import { sanitizeProject } from "../engine/validate";
+import {
+  MAX_DIMENSION,
+  MAX_FRAMES_PER_SPRITE,
+  MAX_PALETTE_COLORS,
+  MAX_PROJECT_JSON_LENGTH,
+  MAX_PROJECT_NAME_LENGTH,
+  MAX_SPRITE_NAME_LENGTH,
+  MAX_SPRITES,
+  MAX_TOTAL_PIXEL_CELLS,
+  projectPixelCells,
+} from "../projectLimits";
 import type { ProjectChange } from "../realtime/projectEvents";
 
 export type TransformOp =
@@ -25,7 +36,6 @@ export type TransformOp =
   | "shift"
   | "outline";
 
-const MAX_PALETTE = 64;
 const HISTORY_LIMIT = 60;
 const STORAGE_KEY = "pixel-art-tutor.project.v1";
 
@@ -48,7 +58,7 @@ function cloneProject(p: Project): Project {
 function loadStored(): Project | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
+    if (!raw || raw.length > MAX_PROJECT_JSON_LENGTH) return null;
     return sanitizeProject(JSON.parse(raw));
   } catch {
     return null;
@@ -66,6 +76,24 @@ export function subscribeProjectChanges(listener: (change: ProjectChange) => voi
 
 function notifyProjectChange(change: ProjectChange): void {
   for (const listener of projectListeners) listener(change);
+}
+
+function projectsEqual(a: Project, b: Project): boolean {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+function safeDimension(value: number, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(1, Math.min(MAX_DIMENSION, Math.round(value)))
+    : fallback;
+}
+
+function isSpriteKind(value: unknown): value is SpriteKind {
+  return value === "character" || value === "item" || value === "tile";
 }
 
 export interface ResolveTarget {
@@ -101,10 +129,11 @@ interface ProjectState {
 
   beginStroke(): void;
   endStroke(label?: string): void;
+  interruptStroke(): void;
 
   addPaletteColor(hex: string): { index: number } | { error: string };
   setActiveSprite(spriteId: string, frameIndex?: number): boolean;
-  addSprite(opts: { name: string; width: number; height: number; kind: SpriteKind; copyFromId?: string }): string;
+  addSprite(opts: { name: string; width: number; height: number; kind: SpriteKind; copyFromId?: string }): string | null;
   deleteSprite(id: string): void;
   renameSprite(id: string, name: string): void;
   renameProject(name: string): void;
@@ -114,7 +143,7 @@ interface ProjectState {
     height: number;
     frames: Array<Array<string | null>>;
     kind?: SpriteKind;
-  }): string;
+  }): string | null;
   addFrame(spriteId?: string, copyFrameIndex?: number): number;
   deleteFrame(frameIndex: number, spriteId?: string): boolean;
   selectFrame(index: number): void;
@@ -135,6 +164,27 @@ export const useStore = create<ProjectState>()((set, get) => {
   let strokeActive = false;
   let strokeBaseProject: Project | null = null;
 
+  function finishStroke(label = "Paint stroke") {
+    if (!strokeActive) return;
+    strokeActive = false;
+    const previousProject = strokeBaseProject;
+    strokeBaseProject = null;
+    const project = get().project;
+    if (!previousProject || projectsEqual(previousProject, project)) return;
+    const { past } = get();
+    set({ past: [...past.slice(-HISTORY_LIMIT), previousProject], future: [] });
+    scheduleSave();
+    notifyProjectChange({ project, previousProject, source: "local", label });
+  }
+
+  function cancelStroke() {
+    if (!strokeActive) return;
+    strokeActive = false;
+    const previousProject = strokeBaseProject;
+    strokeBaseProject = null;
+    if (previousProject) set({ project: previousProject });
+  }
+
   /** commit: push current project into history and install next */
   function commit(
     next: Project,
@@ -143,6 +193,10 @@ export const useStore = create<ProjectState>()((set, get) => {
     label = "Edit",
   ) {
     const { project, past } = get();
+    if (projectsEqual(project, next)) {
+      if (extra) set(extra);
+      return;
+    }
     if (strokeActive) {
       // history and the room event are finalized once at endStroke
       set({ project: next, ...extra });
@@ -162,7 +216,9 @@ export const useStore = create<ProjectState>()((set, get) => {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(get().project));
+        const serialized = JSON.stringify(get().project);
+        if (serialized.length > MAX_PROJECT_JSON_LENGTH) return;
+        localStorage.setItem(STORAGE_KEY, serialized);
       } catch {
         /* storage full or unavailable */
       }
@@ -179,26 +235,17 @@ export const useStore = create<ProjectState>()((set, get) => {
 
     beginStroke() {
       if (strokeActive) return;
-      const { project, past } = get();
+      const { project } = get();
       strokeBaseProject = project;
       strokeActive = true;
-      set({ past: [...past.slice(-HISTORY_LIMIT), project], future: [] });
     },
 
     endStroke(label = "Paint stroke") {
-      if (!strokeActive) return;
-      strokeActive = false;
-      const previousProject = strokeBaseProject;
-      strokeBaseProject = null;
-      scheduleSave();
-      if (previousProject) {
-        notifyProjectChange({
-          project: get().project,
-          previousProject,
-          source: "local",
-          label,
-        });
-      }
+      finishStroke(label);
+    },
+
+    interruptStroke() {
+      finishStroke();
     },
 
     activeSprite() {
@@ -217,6 +264,11 @@ export const useStore = create<ProjectState>()((set, get) => {
       if (frameIndex === undefined) {
         fi = sprite.id === activeSpriteId ? activeFrameIndex : 0;
       } else {
+        if (!Number.isInteger(frameIndex) || frameIndex < 0 || frameIndex >= sprite.frames.length) {
+          return {
+            error: `frame index ${frameIndex} is out of range for '${sprite.name}' (0-${sprite.frames.length - 1})`,
+          };
+        }
         fi = frameIndex;
       }
       fi = Math.max(0, Math.min(fi, sprite.frames.length - 1));
@@ -270,7 +322,9 @@ export const useStore = create<ProjectState>()((set, get) => {
           const frame = target.frames[fi];
           if (!frame) continue;
           if (!inBounds(ch.x, ch.y, target.width, target.height)) continue;
-          frame.pixels[ch.y * target.width + ch.x] = colorIdx;
+          const pixelIndex = ch.y * target.width + ch.x;
+          if (frame.pixels[pixelIndex] === colorIdx) continue;
+          frame.pixels[pixelIndex] = colorIdx;
           applied++;
         }
       }
@@ -296,7 +350,9 @@ export const useStore = create<ProjectState>()((set, get) => {
         if (!frame) continue;
         for (let yy = r.y; yy < r.y + r.h; yy++)
           for (let xx = r.x; xx < r.x + r.w; xx++) {
-            frame.pixels[yy * target.width + xx] = colorIdx;
+            const pixelIndex = yy * target.width + xx;
+            if (frame.pixels[pixelIndex] === colorIdx) continue;
+            frame.pixels[pixelIndex] = colorIdx;
             count++;
           }
       }
@@ -332,10 +388,16 @@ export const useStore = create<ProjectState>()((set, get) => {
       const { sprite } = t;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
-      const fis =
-        opts.frameIndices && opts.frameIndices.length
-          ? [...new Set(opts.frameIndices)].filter((i) => target.frames[i])
-          : target.frames.map((_, i) => i);
+      let fis: number[];
+      if (opts.frameIndices && opts.frameIndices.length) {
+        fis = [...new Set(opts.frameIndices)];
+        const invalid = fis.find(
+          (index) => !Number.isInteger(index) || index < 0 || index >= target.frames.length,
+        );
+        if (invalid !== undefined) return `frame index ${invalid} is out of range for '${target.name}'`;
+      } else {
+        fis = target.frames.map((_, i) => i);
+      }
       const newW = target.height;
       const newH = target.width;
 
@@ -408,8 +470,8 @@ export const useStore = create<ProjectState>()((set, get) => {
       const { project } = get();
       const existing = project.palette.indexOf(normalized);
       if (existing >= 0) return { index: existing };
-      if (project.palette.length >= MAX_PALETTE)
-        return { error: `palette is full (${MAX_PALETTE} colors max)` };
+      if (project.palette.length >= MAX_PALETTE_COLORS)
+        return { error: `palette is full (${MAX_PALETTE_COLORS} colors max)` };
       const next = cloneProject(project);
       next.palette.push(normalized);
       commit(next);
@@ -427,25 +489,29 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     addSprite(opts) {
-      const next = cloneProject(get().project);
-      const w = Math.max(1, Math.min(64, Math.round(opts.width)));
-      const h = Math.max(1, Math.min(64, Math.round(opts.height)));
+      const project = get().project;
+      if (project.sprites.length >= MAX_SPRITES) return null;
+      const kind = isSpriteKind(opts.kind) ? opts.kind : "item";
+      const w = safeDimension(opts.width, 16);
+      const h = safeDimension(opts.height, 16);
       let pixels = emptyPixels(w, h);
-      let frameCount = opts.kind === "character" ? 2 : 1;
+      let frameCount = kind === "character" ? 2 : 1;
       if (opts.copyFromId) {
-        const src = next.sprites.find((s) => s.id === opts.copyFromId);
+        const src = project.sprites.find((s) => s.id === opts.copyFromId);
         if (src && src.width === w && src.height === h) {
           pixels = [...src.frames[0].pixels];
           frameCount = src.frames.length;
         }
       }
+      if (projectPixelCells(project) + w * h * frameCount > MAX_TOTAL_PIXEL_CELLS) return null;
+      const next = cloneProject(project);
       const id = uid("sprite");
       const sprite: Sprite = {
         id,
-        name: opts.name || "Untitled",
+        name: (typeof opts.name === "string" ? opts.name.trim() : "").slice(0, MAX_SPRITE_NAME_LENGTH) || "Untitled",
         width: w,
         height: h,
-        kind: opts.kind,
+        kind,
         frames: Array.from({ length: frameCount }, (_, i) => ({
           id: `${id}-f${i}`,
           pixels: i === 0 ? pixels : [...pixels],
@@ -473,8 +539,10 @@ export const useStore = create<ProjectState>()((set, get) => {
     renameSprite(id, name) {
       const next = cloneProject(get().project);
       const sp = next.sprites.find((s) => s.id === id);
-      if (!sp || !name.trim()) return;
-      sp.name = name.trim();
+      const trimmed = typeof name === "string" ? name.trim().slice(0, MAX_SPRITE_NAME_LENGTH) : "";
+      if (!sp || !trimmed) return;
+      if (sp.name === trimmed) return;
+      sp.name = trimmed;
       commit(next);
     },
 
@@ -482,25 +550,31 @@ export const useStore = create<ProjectState>()((set, get) => {
       const trimmed = name.trim();
       if (!trimmed || trimmed === get().project.name) return;
       const next = cloneProject(get().project);
-      next.name = trimmed;
+      next.name = trimmed.slice(0, MAX_PROJECT_NAME_LENGTH);
       commit(next);
     },
 
     importRasterSprite(opts) {
-      const next = cloneProject(get().project);
-      const width = Math.max(1, Math.min(64, Math.round(opts.width)));
-      const height = Math.max(1, Math.min(64, Math.round(opts.height)));
+      const project = get().project;
+      if (project.sprites.length >= MAX_SPRITES) return null;
+      const width = safeDimension(opts.width, 16);
+      const height = safeDimension(opts.height, 16);
+      const sourceFrames = Array.isArray(opts.frames) ? opts.frames.slice(0, MAX_FRAMES_PER_SPRITE) : [];
+      const frameCount = Math.max(1, sourceFrames.length);
+      if (projectPixelCells(project) + width * height * frameCount > MAX_TOTAL_PIXEL_CELLS) return null;
+      const next = cloneProject(project);
       const id = uid("sprite");
-      const frames = opts.frames.slice(0, 32).map((source) => {
+      const frames = sourceFrames.map((source) => {
         const pixels = new Array<number>(width * height).fill(TRANSPARENT);
+        const sourcePixels = Array.isArray(source) ? source : [];
         for (let i = 0; i < pixels.length; i++) {
-          const value = source[i];
+          const value = sourcePixels[i];
           if (!value) continue;
           const hex = normalizeHex(value);
           if (!hex) continue;
           let paletteIndex = next.palette.indexOf(hex);
           if (paletteIndex < 0) {
-            if (next.palette.length >= MAX_PALETTE) continue;
+            if (next.palette.length >= MAX_PALETTE_COLORS) continue;
             paletteIndex = next.palette.length;
             next.palette.push(hex);
           }
@@ -511,10 +585,10 @@ export const useStore = create<ProjectState>()((set, get) => {
       const safeFrames = frames.length > 0 ? frames : [{ id: uid("frame"), pixels: emptyPixels(width, height) }];
       next.sprites.push({
         id,
-        name: opts.name.trim() || "Imported sprite",
+        name: (typeof opts.name === "string" ? opts.name.trim() : "").slice(0, MAX_SPRITE_NAME_LENGTH) || "Imported sprite",
         width,
         height,
-        kind: opts.kind ?? "item",
+        kind: isSpriteKind(opts.kind) ? opts.kind : "item",
         frames: safeFrames,
       });
       commit(next, { activeSpriteId: id, activeFrameIndex: 0 });
@@ -525,9 +599,18 @@ export const useStore = create<ProjectState>()((set, get) => {
       const t = get().resolveTarget(spriteId);
       if ("error" in t) return -1;
       const { sprite } = t;
+      if (sprite.frames.length >= MAX_FRAMES_PER_SPRITE) return -1;
+      if (projectPixelCells(get().project) + sprite.width * sprite.height > MAX_TOTAL_PIXEL_CELLS) return -1;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
       const srcIdx = copyFrameIndex ?? target.frames.length - 1;
+      if (
+        !Number.isInteger(srcIdx) ||
+        srcIdx < 0 ||
+        srcIdx >= target.frames.length
+      ) {
+        return -1;
+      }
       const src = target.frames[Math.max(0, Math.min(srcIdx, target.frames.length - 1))];
       const id = uid("frame");
       target.frames.push({ id, pixels: src ? [...src.pixels] : emptyPixels(target.width, target.height) });
@@ -557,8 +640,8 @@ export const useStore = create<ProjectState>()((set, get) => {
 
     ensureTilemap(cols, rows) {
       const { project } = get();
-      const c = Math.max(2, Math.min(64, cols));
-      const r = Math.max(2, Math.min(64, rows));
+      const c = Math.max(2, Math.min(MAX_DIMENSION, safeDimension(cols, 12)));
+      const r = Math.max(2, Math.min(MAX_DIMENSION, safeDimension(rows, 9)));
       const next = cloneProject(project);
       if (
         next.tilemap &&
@@ -582,7 +665,7 @@ export const useStore = create<ProjectState>()((set, get) => {
       const { project } = get();
       const tm = project.tilemap;
       if (!tm || !inBounds(x, y, tm.cols, tm.rows)) return false;
-      if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId)) return false;
+      if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId && s.kind === "tile")) return false;
       const next = cloneProject(project);
       next.tilemap!.cells[y * tm.cols + x] = spriteId;
       commit(next);
@@ -593,14 +676,16 @@ export const useStore = create<ProjectState>()((set, get) => {
       const { project } = get();
       const tm = project.tilemap;
       if (!tm) return 0;
-      if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId)) return 0;
+      if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId && s.kind === "tile")) return 0;
       const r = clampRect(x, y, w, h, tm.cols, tm.rows);
       if (!r) return 0;
       const next = cloneProject(project);
       let count = 0;
       for (let yy = r.y; yy < r.y + r.h; yy++)
         for (let xx = r.x; xx < r.x + r.w; xx++) {
-          next.tilemap!.cells[yy * tm.cols + xx] = spriteId;
+          const cellIndex = yy * tm.cols + xx;
+          if (next.tilemap!.cells[cellIndex] === spriteId) continue;
+          next.tilemap!.cells[cellIndex] = spriteId;
           count++;
         }
       if (count) commit(next);
@@ -608,6 +693,7 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     undo() {
+      finishStroke();
       const { past, project, future } = get();
       if (!past.length) return;
       const prev = past[past.length - 1];
@@ -623,6 +709,7 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     redo() {
+      finishStroke();
       const { past, project, future } = get();
       if (!future.length) return;
       const nxt = future[0];
@@ -643,6 +730,7 @@ export const useStore = create<ProjectState>()((set, get) => {
           error: "not a valid project file (expected schemaVersion 1 with sprites)",
         };
       }
+      finishStroke();
       commit(sanitized, {
         activeSpriteId: sanitized.sprites[0].id,
         activeFrameIndex: 0,
@@ -654,6 +742,9 @@ export const useStore = create<ProjectState>()((set, get) => {
     applyRoomProject(p) {
       const sanitized = sanitizeProject(p);
       if (!sanitized) return false;
+      // The room snapshot is authoritative. Discard an unfinished local gesture
+      // instead of notifying it while RoomClient is applying the remote state.
+      cancelStroke();
       const previousProject = get().project;
       const project = sanitized;
       const active = project.sprites.find((sprite) => sprite.id === get().activeSpriteId) ?? project.sprites[0];
@@ -664,7 +755,7 @@ export const useStore = create<ProjectState>()((set, get) => {
         activeSpriteId: active.id,
         activeFrameIndex: Math.min(get().activeFrameIndex, active.frames.length - 1),
         selectedTileId:
-          get().selectedTileId && project.sprites.some((sprite) => sprite.id === get().selectedTileId)
+          get().selectedTileId && project.sprites.some((sprite) => sprite.id === get().selectedTileId && sprite.kind === "tile")
             ? get().selectedTileId
             : null,
       });
@@ -674,6 +765,7 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     resetProject(kind) {
+      finishStroke();
       const p = kind === "starter" ? createStarterProject() : blankProject();
       commit(p, { activeSpriteId: p.sprites[0].id, activeFrameIndex: 0, selectedTileId: null });
     },

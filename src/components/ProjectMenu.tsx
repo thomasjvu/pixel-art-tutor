@@ -13,6 +13,7 @@ import {
   unitySpriteManifest,
   unityTextureMeta,
 } from "../engine/exportImage";
+import { MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
 
 function closeMenu(target: HTMLElement) {
   target.closest("details")?.removeAttribute("open");
@@ -89,11 +90,16 @@ export function ProjectMenu() {
 
   function onProjectImport(file: File | undefined) {
     if (!file) return;
+    if (file.size > MAX_PROJECT_JSON_LENGTH) {
+      window.alert(`That project file is too large (limit: ${MAX_PROJECT_JSON_LENGTH.toLocaleString()} characters).`);
+      return;
+    }
     file
       .text()
       .then((text) => {
         try {
-          useStore.getState().loadProject(JSON.parse(text));
+          const result = useStore.getState().loadProject(JSON.parse(text));
+          if (!result.ok) window.alert(`Could not import project: ${result.error}`);
         } catch {
           window.alert("That project file could not be opened.");
         }
@@ -130,13 +136,14 @@ export function ProjectMenu() {
               .padStart(2, "0")}${data[i + 2].toString(16).padStart(2, "0")}`,
           );
         }
-        useStore.getState().importRasterSprite({
+        const importedId = useStore.getState().importRasterSprite({
           name: imageName(file.name),
           width,
           height,
           frames: [pixels],
           kind: "item",
         });
+        if (!importedId) window.alert("Could not import image: project capacity reached.");
       } finally {
         URL.revokeObjectURL(url);
       }

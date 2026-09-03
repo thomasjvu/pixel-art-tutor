@@ -14,6 +14,8 @@ import { StatusBar } from "./components/StatusBar";
 import { RoomBridge } from "./components/RoomBridge";
 import { RoomPanel } from "./components/RoomPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { decodeProjectFromHashParam } from "./engine/share";
+import { downloadText, spriteFileStem } from "./engine/exportImage";
 import { registerTutorTools } from "./webmcp/registerTools";
 import { useUi } from "./store/uiStore";
 import { useEditor } from "./store/editorStore";
@@ -41,6 +43,18 @@ function AppContent() {
   const projectName = useStore((s) => s.project.name);
   const spriteCount = useStore((s) => s.project.sprites.length);
   const renameProject = useStore((s) => s.renameProject);
+  const hydratedShareParam = useRef<string | null>(null);
+
+  useEffect(() => {
+    const m = location.hash.match(/^#p=(.+)$/);
+    const param = m?.[1];
+    if (!param || hydratedShareParam.current === param) return;
+    hydratedShareParam.current = param;
+    const parsed = decodeProjectFromHashParam(param);
+    if (!parsed) return;
+    const result = useStore.getState().loadProject(parsed);
+    if (!result.ok) console.warn("[share] ignoring bad permalink:", result.error);
+  }, []);
 
   useEffect(() => {
     const controller = registerTutorTools();
@@ -57,14 +71,32 @@ function AppContent() {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement;
+      const command = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (command && key === "s") {
+        event.preventDefault();
+        const state = useStore.getState();
+        downloadText(state.exportProject(), `${spriteFileStem(state.project.name)}.pixeltutor.json`);
+        return;
+      }
       if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      if (command && key === "1") {
+        event.preventDefault();
+        useStore.getState().resetProject("starter");
+        return;
+      }
+      if (command && key === "n") {
+        event.preventDefault();
+        useStore.getState().resetProject("blank");
+        return;
+      }
+      if (command && key === "z") {
         event.preventDefault();
         if (event.shiftKey) redoProject();
         else undoProject();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
+      if (command && key === "y") {
         event.preventDefault();
         redoProject();
         return;
@@ -157,7 +189,12 @@ function AppContent() {
                 : "SOLO STUDIO"}
           </span>
         </div>
-        <button className="header-icon-btn" title="Open help" aria-label="Open help">
+        <button
+          className="header-icon-btn"
+          title="Open agent help"
+          aria-label="Open agent help"
+          onClick={() => setTab("agent")}
+        >
           <Icon icon="mingcute:question" />
         </button>
       </header>

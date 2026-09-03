@@ -4,10 +4,9 @@ import type { PixelChange } from "../types";
 import { TRANSPARENT } from "../types";
 import { normalizeHex } from "../engine/color";
 import { critiqueSprite } from "../engine/critique";
-import { pixelsToRowsWithWidth } from "../engine/pixels";
+import { PIXEL_SYMBOLS, pixelsToRowsWithWidth } from "../engine/pixels";
 import { animateAgentPixels, beginAgentAction, finishAgentAction, showAgentAction } from "../realtime/agentAnimation";
-
-const DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
+import { MAX_PROJECT_JSON_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
 
 function log(tool: string, summary: string) {
   useUi.getState().pushLog({ tool, summary, source: "agent" });
@@ -15,6 +14,10 @@ function log(tool: string, summary: string) {
 
 function target(spriteId?: string, frameIndex?: number) {
   return useStore.getState().resolveTarget(spriteId, frameIndex);
+}
+
+function interruptHumanStroke(): void {
+  useStore.getState().interruptStroke();
 }
 
 function previewColor(color: PixelChange["color"], palette: string[]): string | null {
@@ -121,7 +124,7 @@ export function registerTutorTools(): AbortController {
       name: "read_sprite",
       title: "Read sprite pixels",
       description:
-        "Read one frame of a sprite as ASCII art rows plus a color legend, so you can see exactly what the human is drawing. '.' = transparent; other characters are base-36 palette indices.",
+        "Read one frame of a sprite as ASCII art rows plus a color legend, so you can see exactly what the human is drawing. '.' = transparent; other characters use the 64-symbol palette alphabet returned in the legend.",
       inputSchema: {
         type: "object",
         properties: {
@@ -145,7 +148,7 @@ export function registerTutorTools(): AbortController {
           sprite: { id: sprite.id, name: sprite.name, width: sprite.width, height: sprite.height },
           frameIndex: fi,
           legend: used.map((i) => ({
-            char: DIGITS[i] ?? "?",
+            char: PIXEL_SYMBOLS[i] ?? "?",
             index: i,
             hex: useStore.getState().project.palette[i],
           })),
@@ -206,11 +209,13 @@ export function registerTutorTools(): AbortController {
           actionId,
           previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
         );
+        interruptHumanStroke();
         const res = useStore.getState().applyPixelChanges(changes, t.sprite.id, t.frameIndex, !!allFrames);
         finishAgentAction(actionId, res.applied > 0 ? `Painted ${res.applied} pixel${res.applied === 1 ? "" : "s"}` : "No pixels changed");
         log("set_pixels", `${res.applied} px on ${t.sprite.name}`);
+        if (res.applied === 0) return { ok: false, error: "no pixels were changed" };
         return {
-          ok: res.applied > 0,
+          ok: true,
           applied: res.applied,
           addedPaletteColors: res.addedColors.map((i) => ({
             index: i,
@@ -272,6 +277,7 @@ export function registerTutorTools(): AbortController {
           actionId,
           previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
         );
+        interruptHumanStroke();
         const result = useStore
           .getState()
           .fillRegion(
@@ -327,6 +333,7 @@ export function registerTutorTools(): AbortController {
             ok: false,
             error: `start pixel (${sx},${sy}) is outside the ${t.sprite.width}x${t.sprite.height} canvas`,
           };
+        interruptHumanStroke();
         const result = useStore.getState().floodFillAt(sx, sy, color, t.sprite.id, t.frameIndex);
         if (result && "error" in result) return { ok: false, error: result.error };
         log("flood_fill", `${t.sprite.name} @ ${sx},${sy}`);
@@ -361,6 +368,7 @@ export function registerTutorTools(): AbortController {
           actionId,
           previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
         );
+        interruptHumanStroke();
         useStore.getState().clearFrame(t.sprite.id, t.frameIndex);
         finishAgentAction(actionId, "Frame cleared");
         log("clear_frame", `${t.sprite.name} frame ${t.frameIndex}`);
@@ -414,6 +422,7 @@ export function registerTutorTools(): AbortController {
           x: Math.floor(resolved.sprite.width / 2),
           y: Math.floor(resolved.sprite.height / 2),
         });
+        interruptHumanStroke();
         const err = st.transform(op, {
           dx: typeof dx === "number" ? Math.round(dx) : undefined,
           dy: typeof dy === "number" ? Math.round(dy) : undefined,
@@ -456,6 +465,7 @@ export function registerTutorTools(): AbortController {
           x: Math.floor(resolved.sprite.width / 2),
           y: Math.floor(resolved.sprite.height / 2),
         });
+        interruptHumanStroke();
         const result = st.replaceColor(from, to, spriteId);
         if (typeof result !== "number") {
           finishAgentAction(actionId, result.error);
@@ -487,6 +497,7 @@ export function registerTutorTools(): AbortController {
           status: "thinking",
         });
         await showAgentAction(actionId, active ? { x: 0, y: 0 } : null);
+        interruptHumanStroke();
         const r = useStore.getState().addPaletteColor(hex);
         if ("error" in r) {
           finishAgentAction(actionId, r.error);
@@ -558,6 +569,7 @@ export function registerTutorTools(): AbortController {
           x: Math.floor(resolved.sprite.width / 2),
           y: Math.floor(resolved.sprite.height / 2),
         });
+        interruptHumanStroke();
         const idx = useStore.getState().addFrame(spriteId, copyFrameIndex);
         if (idx < 0) {
           finishAgentAction(actionId, "Could not add frame");
@@ -587,6 +599,7 @@ export function registerTutorTools(): AbortController {
         if (confirm !== true) return { ok: false, error: "deletion requires confirm:true" };
         const t = target(spriteId, frameIndex);
         if ("error" in t) return { ok: false, error: t.error };
+        interruptHumanStroke();
         const ok = useStore.getState().deleteFrame(frameIndex, t.sprite.id);
         log("delete_frame", ok ? `${t.sprite.name} frame ${frameIndex}` : `refused (${t.sprite.name})`);
         return ok
@@ -603,18 +616,20 @@ export function registerTutorTools(): AbortController {
         type: "object",
         properties: {
           spriteId: { type: "string" },
-          name: { type: "string", description: "New name (non-empty)" },
+          name: { type: "string", maxLength: MAX_SPRITE_NAME_LENGTH, description: "New name (non-empty)" },
         },
         required: ["spriteId", "name"],
       },
       execute: ({ spriteId, name }) => {
         const t = target(spriteId);
         if ("error" in t) return { ok: false, error: t.error };
-        if (typeof name !== "string" || !name.trim())
+        const nextName = typeof name === "string" ? name.trim().slice(0, MAX_SPRITE_NAME_LENGTH) : "";
+        if (!nextName)
           return { ok: false, error: "name must be a non-empty string" };
-        useStore.getState().renameSprite(t.sprite.id, name.trim());
-        log("rename_sprite", `${t.sprite.name} -> ${name.trim()}`);
-        return { ok: true, spriteId: t.sprite.id, name: name.trim() };
+        interruptHumanStroke();
+        useStore.getState().renameSprite(t.sprite.id, nextName);
+        log("rename_sprite", `${t.sprite.name} -> ${nextName}`);
+        return { ok: true, spriteId: t.sprite.id, name: nextName };
       },
     }),
 
@@ -632,7 +647,7 @@ export function registerTutorTools(): AbortController {
       inputSchema: {
         type: "object",
         properties: {
-          name: { type: "string" },
+          name: { type: "string", maxLength: MAX_SPRITE_NAME_LENGTH },
           width: { type: "number", description: "1-64, typically 16 or 32" },
           height: { type: "number", description: "1-64, typically 16 or 32" },
           kind: {
@@ -653,7 +668,13 @@ export function registerTutorTools(): AbortController {
           status: "thinking",
         });
         await showAgentAction(actionId);
+        interruptHumanStroke();
         const id = useStore.getState().addSprite({ name, width, height, kind, copyFromId });
+        if (!id) {
+          finishAgentAction(actionId, "Project capacity reached");
+          log("add_sprite", "rejected: project capacity reached");
+          return { ok: false, error: "project capacity reached (sprite, frame, or pixel limit)" };
+        }
         finishAgentAction(actionId, `Created ${name || "new sprite"}`);
         log("add_sprite", `${name} (${kind})`);
         return { ok: true, spriteId: id };
@@ -673,7 +694,7 @@ export function registerTutorTools(): AbortController {
         if (!tm) return { ok: false, error: "no tilemap exists yet; call ensure_tilemap first to create one" };
         const tiles = st.project.sprites.filter((sp) => sp.kind === "tile");
         const charFor = new Map<string, string>();
-        tiles.forEach((t, i) => charFor.set(t.id, DIGITS[(i + 10) % 36]!));
+        tiles.forEach((t, i) => charFor.set(t.id, PIXEL_SYMBOLS[(i + 10) % PIXEL_SYMBOLS.length]!));
         const rowsAscii: string[] = [];
         for (let y = 0; y < tm.rows; y++) {
           let row = "";
@@ -711,6 +732,7 @@ export function registerTutorTools(): AbortController {
       execute: ({ cols, rows }) => {
         const st = useStore.getState();
         const before = st.project.tilemap;
+        interruptHumanStroke();
         st.ensureTilemap(Math.round(cols), Math.round(rows));
         const after = useStore.getState().project.tilemap;
         const created = !before && !!after;
@@ -747,6 +769,7 @@ export function registerTutorTools(): AbortController {
           status: "drawing",
         });
         await showAgentAction(actionId);
+        interruptHumanStroke();
         const ok = useStore.getState().placeTile(Math.round(x), Math.round(y), id);
         finishAgentAction(actionId, ok ? "Tile placed" : "Could not place tile");
         log("place_tile", ok ? `(${x},${y})` : `failed (${x},${y})`);
@@ -780,6 +803,7 @@ export function registerTutorTools(): AbortController {
           status: "filling",
         });
         await showAgentAction(actionId);
+        interruptHumanStroke();
         const n = useStore
           .getState()
           .fillTiles(Math.round(x), Math.round(y), Math.round(width), Math.round(height), id);
@@ -825,7 +849,7 @@ export function registerTutorTools(): AbortController {
       name: "export_project",
       title: "Export project JSON",
       description:
-        "Serialize the entire project (palette, sprites, frames, tilemap) as JSON that can be re-imported via Sprites > Project file > Import, or saved by the user.",
+        "Serialize the entire project (palette, sprites, frames, tilemap) as JSON that can be re-imported via the import_project tool, the Sprites > Project file > Import button, or a share permalink.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       execute: () => {
@@ -836,6 +860,37 @@ export function registerTutorTools(): AbortController {
           filename: `${st.project.name.replace(/\W+/g, "-").toLowerCase()}.pixeltutor.json`,
           json: st.exportProject(),
         };
+      },
+    }),
+
+    defineTool<{ json: string }>({
+      name: "import_project",
+      title: "Import project JSON",
+      description:
+        "Replace the current project with one previously exported via export_project (or a project file). The JSON is sanitized and validated; the human sees the imported project immediately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          json: { type: "string", description: "Full project JSON string" },
+        },
+        required: ["json"],
+      },
+      execute: ({ json }) => {
+        if (typeof json !== "string" || json.length > MAX_PROJECT_JSON_LENGTH) {
+          return { ok: false, error: `json exceeds the ${MAX_PROJECT_JSON_LENGTH.toLocaleString()} character limit` };
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(json);
+        } catch {
+          return { ok: false, error: "json is not parseable JSON" };
+        }
+        interruptHumanStroke();
+        const result = useStore.getState().loadProject(parsed);
+        log("import_project", result.ok ? "imported" : "rejected");
+        return result.ok
+          ? { ok: true }
+          : { ok: false, error: result.error };
       },
     }),
   ];

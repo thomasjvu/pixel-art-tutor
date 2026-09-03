@@ -35,6 +35,7 @@ This is genuine human-agent collaboration: shared state, shared tools, one canva
   alongside the sheet.
 - **Live rooms**: open the Room panel to create a shareable room. People see each other's pixel
   cursors, and Pixel Bot's animated drawing cursor follows WebMCP actions in real time.
+- Share links (`#p=…` permalinks) let anyone open a co-created project with one click.
 
 ## The WebMCP implementation
 
@@ -49,7 +50,7 @@ await document.modelContext.registerTool({
 });
 ```
 
-### Tool catalog (20 tools)
+### Tool catalog (21 tools)
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -59,6 +60,7 @@ await document.modelContext.registerTool({
 | `get_tilemap` | read-only | Map grid as ASCII + tile legend |
 | `ensure_tilemap` | write | Create/resize the tilemap (clamped 2–64) |
 | `export_project` | read-only | Full project JSON |
+| `import_project` | write | Replace the current project from JSON |
 | `set_pixels` | write | Batch pixel painting (hex / palette index / transparent) |
 | `fill_region` | write | Rectangle fill |
 | `flood_fill` | write | Bucket-fill a connected region |

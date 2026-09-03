@@ -9,11 +9,12 @@ import {
   type RoomOperationSummary,
   type RoomPresence,
 } from "../src/realtime/protocol";
+import { MAX_PROJECT_JSON_LENGTH } from "../src/projectLimits";
 import type { Project } from "../src/types";
 
 const STORAGE_KEY = "pixel-room-state-v1";
 const MAX_HISTORY = 32;
-const MAX_MESSAGE_BYTES = 4_000_000;
+const MAX_MESSAGE_LENGTH = MAX_PROJECT_JSON_LENGTH;
 
 interface StoredOperation extends RoomOperationSummary {
   seq: number;
@@ -119,6 +120,23 @@ function summary(operation: StoredOperation | null): RoomOperationSummary | null
   };
 }
 
+function isStoredOperation(value: unknown): value is StoredOperation {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<StoredOperation>;
+  return (
+    typeof candidate.operationId === "string" &&
+    candidate.operationId.length > 0 &&
+    typeof candidate.actorId === "string" &&
+    candidate.actorId.length > 0 &&
+    typeof candidate.label === "string" &&
+    candidate.label.length > 0 &&
+    (candidate.kind === "edit" || candidate.kind === "undo" || candidate.kind === "redo") &&
+    Number.isInteger(candidate.seq) &&
+    isProject(candidate.beforeProject) &&
+    isProject(candidate.afterProject)
+  );
+}
+
 export class PixelRoom extends Server<RoomEnv> {
   static options = { hibernate: true };
 
@@ -137,7 +155,7 @@ export class PixelRoom extends Server<RoomEnv> {
         seq: stored.seq,
         project: cloneProject(stored.project),
         history: stored.history
-          .filter((entry) => isProject(entry.beforeProject) && isProject(entry.afterProject))
+          .filter(isStoredOperation)
           .slice(-MAX_HISTORY),
       };
     }
@@ -178,7 +196,7 @@ export class PixelRoom extends Server<RoomEnv> {
   }
 
   async onMessage(connection: Connection, rawMessage: WSMessage): Promise<void> {
-    if (typeof rawMessage !== "string" || rawMessage.length > MAX_MESSAGE_BYTES) {
+    if (typeof rawMessage !== "string" || rawMessage.length > MAX_MESSAGE_LENGTH) {
       this.sendError(connection, "That room message was too large.");
       return;
     }

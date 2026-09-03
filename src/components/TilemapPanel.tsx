@@ -142,7 +142,10 @@ export function TilemapPanel() {
         </button>
         <button
           className="text-btn"
-          onClick={() => addSprite({ name: `Tile ${tiles.length + 1}`, width: 16, height: 16, kind: "tile" })}
+          onClick={() => {
+            const id = addSprite({ name: `Tile ${tiles.length + 1}`, width: 16, height: 16, kind: "tile" });
+            if (!id) window.alert("Could not add tile: project capacity reached.");
+          }}
           title="Add a new blank tile to the tileset"
         >
           + Tile

@@ -13,6 +13,7 @@ import {
 import { subscribeProjectChanges, useStore } from "../store/projectStore";
 import { useUi } from "../store/uiStore";
 import type { ProjectChange } from "./projectEvents";
+import { MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
 
 const ROOM_QUERY_KEY = "room";
 const CLIENT_ID_KEY = "pixel-art-tutor.client-id.v1";
@@ -457,7 +458,7 @@ export class RoomClient {
     this.lastUndoOperationId = null;
     this.pendingChange = null;
     useUi.getState().setRoomHistory(true, false);
-    this.send({
+    const sent = this.send({
       type: "operation",
       protocol: ROOM_PROTOCOL_VERSION,
       operationId,
@@ -466,14 +467,25 @@ export class RoomClient {
       project: cloneProject(change.project),
       label: change.label,
     });
+    if (!sent) {
+      this.lastLocalOperationId = null;
+      this.pendingChange = change;
+    }
   }
 
-  private send(message: RoomClientMessage): void {
-    if (!this.socket || this.socket.readyState !== 1) return;
+  private send(message: RoomClientMessage): boolean {
+    if (!this.socket || this.socket.readyState !== 1) return false;
     try {
-      this.socket.send(JSON.stringify(message));
+      const serialized = JSON.stringify(message);
+      if (serialized.length > MAX_PROJECT_JSON_LENGTH) {
+        this.setRoomError("That edit is too large to send to the room.");
+        return false;
+      }
+      this.socket.send(serialized);
+      return true;
     } catch (error) {
       this.setRoomError(error instanceof Error ? error.message : "Could not send room update.");
+      return false;
     }
   }
 }

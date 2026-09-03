@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useStore } from "../store/projectStore";
 import { SpriteThumb } from "./SpriteThumb";
-import type { SpriteKind } from "../types";
+import type { Sprite, SpriteKind } from "../types";
 import { downloadText } from "../engine/exportImage";
+import { projectHashFromJson } from "../engine/share";
+import { MAX_PROJECT_JSON_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
 
 /** SubmitEvent extensions from the WebMCP Declarative API */
 interface WebMCPSubmitEvent extends React.FormEvent<HTMLFormElement> {
@@ -25,9 +28,20 @@ export function SpritesPanel() {
     const w = Math.max(1, Math.min(64, Number(data.get("width")) || 16));
     const h = Math.max(1, Math.min(64, Number(data.get("height")) || 16));
     const k = (String(data.get("kind")) || "character") as SpriteKind;
+    useStore.getState().interruptStroke();
     const id = addSprite({ name: n, width: w, height: h, kind: k });
     if (e.agentInvoked && e.respondWith) {
-      e.respondWith(Promise.resolve({ ok: true, spriteId: id, message: `"${n}" created and now active in the editor.` }));
+      e.respondWith(
+        Promise.resolve(
+          id
+            ? { ok: true, spriteId: id, message: `"${n}" created and now active in the editor.` }
+            : { ok: false, error: "project capacity reached (sprite, frame, or pixel limit)" },
+        ),
+      );
+    }
+    if (!id) {
+      if (!e.agentInvoked) alert("Could not create sprite: project capacity reached.");
+      return;
     }
     e.currentTarget.reset();
   }
@@ -36,28 +50,16 @@ export function SpritesPanel() {
     <div className="panel">
       <div className="sprite-list">
         {project.sprites.map((sp) => (
-          <div key={sp.id} className={sp.id === activeSprite?.id ? "sprite-row active" : "sprite-row"}>
-            <button
-              className="sprite-select"
-              onClick={() => setActiveSprite(sp.id)}
-              title={`Edit ${sp.name}`}
-            >
-              <SpriteThumb sprite={sp} palette={project.palette} size={36} />
-              <input
-                className="sprite-name"
-                value={sp.name}
-                onChange={(e) => renameSprite(sp.id, e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                aria-label={`Rename ${sp.name}`}
-              />
-              <span className={"badge kind-" + sp.kind}>{sp.kind}</span>
-            </button>
-            {project.sprites.length > 1 && (
-              <button className="icon-btn" title="Delete sprite" onClick={() => deleteSprite(sp.id)}>
-                ×
-              </button>
-            )}
-          </div>
+          <SpriteRow
+            key={`${sp.id}:${sp.name}`}
+            sprite={sp}
+            palette={project.palette}
+            active={sp.id === activeSprite?.id}
+            canDelete={project.sprites.length > 1}
+            onSelect={() => setActiveSprite(sp.id)}
+            onDelete={() => deleteSprite(sp.id)}
+            onRename={renameSprite}
+          />
         ))}
       </div>
 
@@ -74,6 +76,7 @@ export function SpritesPanel() {
             <input
               name="name"
               defaultValue=""
+              maxLength={MAX_SPRITE_NAME_LENGTH}
               placeholder="Potion"
               toolparamdescription="Name of the sprite, e.g. 'Potion' or 'Knight idle'."
             />
@@ -123,6 +126,7 @@ export function SpritesPanel() {
         <summary>Project file</summary>
         <div className="panel-row wrap">
           <ExportButton />
+          <ShareButton />
           <label className="text-btn file-btn">
             Import
             <input
@@ -132,6 +136,11 @@ export function SpritesPanel() {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                if (file.size > MAX_PROJECT_JSON_LENGTH) {
+                  alert(`Could not import project: file exceeds the ${MAX_PROJECT_JSON_LENGTH.toLocaleString()} character limit`);
+                  e.target.value = "";
+                  return;
+                }
                 file.text().then((t) => {
                   let parsed: unknown;
                   try {
@@ -142,7 +151,7 @@ export function SpritesPanel() {
                   }
                   const result = useStore.getState().loadProject(parsed);
                   if (!result.ok) alert(`Could not import project: ${result.error}`);
-                });
+                }).catch(() => alert("That project file could not be opened."));
                 e.target.value = "";
               }}
             />
@@ -156,6 +165,93 @@ export function SpritesPanel() {
         </div>
       </details>
     </div>
+  );
+}
+
+function SpriteRow({
+  sprite,
+  palette,
+  active,
+  canDelete,
+  onSelect,
+  onDelete,
+  onRename,
+}: {
+  sprite: Sprite;
+  palette: string[];
+  active: boolean;
+  canDelete: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onRename: (id: string, name: string) => void;
+}) {
+  const [draft, setDraft] = useState(sprite.name);
+
+  function commitName() {
+    const next = draft.trim().slice(0, MAX_SPRITE_NAME_LENGTH);
+    if (!next) {
+      setDraft(sprite.name);
+      return;
+    }
+    onRename(sprite.id, next);
+    setDraft(next);
+  }
+
+  return (
+    <div className={active ? "sprite-row active" : "sprite-row"}>
+      <button className="sprite-select" onClick={onSelect} title={`Edit ${sprite.name}`}>
+        <SpriteThumb sprite={sprite} palette={palette} size={36} />
+        <span className="sprite-label">{sprite.name}</span>
+        <span className={"badge kind-" + sprite.kind}>{sprite.kind}</span>
+      </button>
+      <input
+        className="sprite-name"
+        value={draft}
+        maxLength={MAX_SPRITE_NAME_LENGTH}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commitName}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            setDraft(sprite.name);
+            event.currentTarget.blur();
+          }
+        }}
+        aria-label={`Rename ${sprite.name}`}
+      />
+      {canDelete && (
+        <button className="icon-btn" title="Delete sprite" onClick={onDelete}>
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ShareButton() {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      className="text-btn"
+      onClick={async () => {
+        const st = useStore.getState();
+        const hash = projectHashFromJson(st.exportProject());
+        if (!hash) {
+          alert("This project is too large to fit in a share link. Save the project JSON instead.");
+          return;
+        }
+        const url = `${location.origin}${location.pathname}${hash}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          alert(`Share link (copy manually):\n${url}`);
+        }
+      }}
+    >
+      {copied ? "Copied!" : "Share link"}
+    </button>
   );
 }
 

@@ -1608,6 +1608,14 @@ kbd {
   background: var(--paper);
 }
 
+.sprite-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sprite-name {
   min-width: 0;
   flex: 1;
