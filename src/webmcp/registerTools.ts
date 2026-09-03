@@ -1,30 +1,56 @@
 import { useStore } from "../store/projectStore";
+import { useEditor } from "../store/editorStore";
 import { useUi } from "../store/uiStore";
 import type { PixelChange } from "../types";
-import { TRANSPARENT } from "../types";
-import { normalizeHex } from "../engine/color";
+import { spriteLayers, TRANSPARENT } from "../types";
+import { normalizeHex, resolveColorInto } from "../engine/color";
 import { critiqueSprite } from "../engine/critique";
 import { clampTutorialStep, TUTORIAL_STEPS } from "../engine/tutorial";
 import { PIXEL_SYMBOLS, pixelsToRowsWithWidth } from "../engine/pixels";
-import { animateAgentPixels, beginAgentAction, finishAgentAction, showAgentAction } from "../realtime/agentAnimation";
+import {
+  animateAgentPixels,
+  beginAgentAction,
+  finishAgentAction,
+  showAgentAction,
+} from "../realtime/agentAnimation";
 import { MAX_PROJECT_JSON_LENGTH, MAX_PROJECT_NAME_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
 
 function log(tool: string, summary: string) {
   useUi.getState().pushLog({ tool, summary, source: "agent" });
 }
 
-function target(spriteId?: string, frameIndex?: number) {
-  return useStore.getState().resolveTarget(spriteId, frameIndex);
+function target(spriteId?: string, frameIndex?: number, layerId?: string) {
+  const store = useStore.getState();
+  const activeSprite = store.activeSprite();
+  const targetSprite = spriteId
+    ? store.project.sprites.find((sprite) => sprite.id === spriteId)
+    : activeSprite;
+  const activeLayerId =
+    activeSprite && targetSprite?.id === activeSprite.id ? useEditor.getState().activeLayerId : null;
+  const selectedLayer = layerId ?? (
+    activeLayerId && targetSprite && spriteLayers(targetSprite).some((layer) => layer.id === activeLayerId)
+      ? activeLayerId
+      : undefined
+  );
+  return store.resolveTarget(spriteId, frameIndex, selectedLayer);
 }
 
 function interruptHumanStroke(): void {
   useStore.getState().interruptStroke();
 }
 
-function previewColor(color: PixelChange["color"], palette: string[]): string | null {
-  if (color === null || color === "transparent") return null;
-  if (typeof color === "number") return palette[Math.round(color)] ?? null;
-  return normalizeHex(color);
+function layerLockError(layerId?: string, spriteId?: string): string | null {
+  const store = useStore.getState();
+  const sprite = spriteId ? store.project.sprites.find((entry) => entry.id === spriteId) : store.activeSprite();
+  const layer = sprite ? spriteLayers(sprite).find((entry) => entry.id === layerId) ?? (layerId ? null : spriteLayers(sprite)[0]) : null;
+  if (layer?.locked) return `'${layer.name}' layer is locked`;
+  return useEditor.getState().layerLocked && !layerId ? "artwork layer is locked" : null;
+}
+
+function previewColor(color: PixelChange["color"], palette: string[]): string | null | undefined {
+  if (color === null || color === "transparent" || color === TRANSPARENT) return null;
+  if (typeof color === "number") return palette[Math.round(color)];
+  return normalizeHex(color) ?? undefined;
 }
 
 function previewCells(
@@ -35,16 +61,52 @@ function previewCells(
 ) {
   return changes
     .filter((change) => change.x >= 0 && change.y >= 0 && change.x < width && change.y < height)
-    .map((change) => ({
-      x: change.x,
-      y: change.y,
-      color: previewColor(change.color, palette),
-    }));
+    .flatMap((change) => {
+      const color = previewColor(change.color, palette);
+      return color === undefined ? [] : [{ x: change.x, y: change.y, color }];
+    });
+}
+
+function paintColorError(color: PixelChange["color"]): string | null {
+  // resolveColorInto may append a new hex to the supplied project, so use a
+  // palette-only probe and leave the real project untouched until the stroke.
+  const probe = { palette: [...useStore.getState().project.palette] };
+  const result = resolveColorInto(color, probe);
+  return "error" in result ? result.error : null;
+}
+
+async function applyAnimatedPaint(
+  actionId: string,
+  cells: ReturnType<typeof previewCells>,
+  spriteId: string,
+  frameIndex: number,
+  allFrames: boolean,
+  layerId: string | undefined,
+): Promise<{ applied: number; addedColors: number[] }> {
+  interruptHumanStroke();
+  useStore.getState().beginStroke();
+  let applied = 0;
+  const addedColors = new Set<number>();
+  try {
+    await animateAgentPixels(actionId, cells, {
+      onChunk: (chunk) => {
+        const result = useStore.getState().applyPixelChanges(chunk, spriteId, frameIndex, allFrames, layerId);
+        applied += result.applied;
+        for (const index of result.addedColors) addedColors.add(index);
+      },
+    });
+  } finally {
+    // One room operation and one undo entry represent the complete animated
+    // gesture, even though the canvas was updated in every visible step.
+    useStore.getState().endStroke("Agent paint");
+  }
+  return { applied, addedColors: [...addedColors] };
 }
 
 type TargetedInput = {
   spriteId?: string;
   frameIndex?: number;
+  layerId?: string;
 };
 
 interface ToolDef<I extends Record<string, unknown>> {
@@ -98,13 +160,24 @@ export function registerTutorTools(): AbortController {
         log("get_project_state", "read project overview");
         return {
           projectName: s.project.name,
-          palette: s.project.palette.map((hex, i) => ({ index: i, hex })),
+          palette: s.project.palette.map((hex, i) => ({ index: i, hex, alpha: s.project.paletteAlpha?.[i] ?? 1 })),
           sprites: s.project.sprites.map((sp) => ({
             id: sp.id,
             name: sp.name,
             kind: sp.kind,
             size: `${sp.width}x${sp.height}`,
             frames: sp.frames.length,
+            layers: spriteLayers(sp).map((layer) => ({
+              id: layer.id,
+              name: layer.name,
+              visible: layer.visible,
+              locked: layer.locked,
+              opacity: layer.opacity,
+              blendMode: layer.blendMode,
+              frames: layer.frames.length,
+              frameLinks: layer.frames.map((frame) => frame.linkId ?? null),
+            })),
+            tags: sp.frameTags ?? [],
             isActive: sp.id === active?.id,
           })),
           activeSpriteId: active?.id ?? null,
@@ -133,14 +206,15 @@ export function registerTutorTools(): AbortController {
         properties: {
           spriteId: { type: "string", description: "Sprite id. Defaults to the active sprite." },
           frameIndex: { type: "number", description: "Zero-based frame index." },
+          layerId: { type: "string", description: "Layer id. Defaults to the first layer." },
         },
       },
       annotations: { readOnlyHint: true },
-      execute: ({ spriteId, frameIndex }) => {
-        const t = target(spriteId, frameIndex);
+      execute: ({ spriteId, frameIndex, layerId }) => {
+        const t = target(spriteId, frameIndex, layerId);
         if ("error" in t) return { ok: false, error: t.error };
-        const { sprite, frameIndex: fi } = t;
-        const frame = sprite.frames[fi]!;
+        const { sprite, layer, frameIndex: fi } = t;
+        const frame = layer.frames[fi]!;
         const rows = pixelsToRowsWithWidth(frame.pixels, sprite.width);
         const used = [...new Set(frame.pixels)]
           .filter((p) => p !== TRANSPARENT)
@@ -150,6 +224,8 @@ export function registerTutorTools(): AbortController {
           ok: true,
           sprite: { id: sprite.id, name: sprite.name, width: sprite.width, height: sprite.height },
           frameIndex: fi,
+          linked: Boolean(frame.linkId),
+          linkId: frame.linkId ?? null,
           legend: used.map((i) => ({
             char: PIXEL_SYMBOLS[i] ?? "?",
             index: i,
@@ -166,18 +242,19 @@ export function registerTutorTools(): AbortController {
       spriteId?: string;
       frameIndex?: number;
       allFrames?: boolean;
+      layerId?: string;
     }>({
       name: "set_pixels",
       title: "Set pixels",
       description:
-        "Paint specific pixels on a sprite frame. The human sees your changes appear live on their canvas. Batch as many pixels as possible per call.",
+        "Paint specific pixels on a sprite frame. Each valid requested pixel is applied in order, one cell at a time on the page. Use fill_region or flood_fill for bulk areas.",
       inputSchema: {
         type: "object",
         properties: {
           pixels: {
             type: "array",
             maxItems: 4096,
-            description: "List of pixel changes, e.g. [{\"x\":3,\"y\":4,\"color\":\"#38b764\"}]",
+            description: "List of pixel changes, applied one cell at a time, e.g. [{\"x\":3,\"y\":4,\"color\":\"#38b764\"}]",
             items: {
               type: "object",
               properties: {
@@ -191,12 +268,15 @@ export function registerTutorTools(): AbortController {
           spriteId: { type: "string", description: "Defaults to the active sprite." },
           frameIndex: { type: "number", description: "Defaults to the active frame." },
           allFrames: { type: "boolean", description: "Apply the same change to every frame." },
+          layerId: { type: "string", description: "Layer id. Defaults to the first layer." },
         },
         required: ["pixels"],
       },
-      execute: async ({ pixels, spriteId, frameIndex, allFrames }) => {
-        const t = target(spriteId, frameIndex);
+      execute: async ({ pixels, spriteId, frameIndex, allFrames, layerId }) => {
+        const t = target(spriteId, frameIndex, layerId);
         if ("error" in t) return { ok: false, error: t.error };
+        const lockError = layerLockError(t.layer.id, t.sprite.id);
+        if (lockError) return { ok: false, error: lockError };
         const changes: PixelChange[] = pixels.slice(0, 4096).map((p) => ({
           x: Math.round(p.x),
           y: Math.round(p.y),
@@ -208,19 +288,21 @@ export function registerTutorTools(): AbortController {
           frameIndex: t.frameIndex,
           message: `Painting ${changes.length} pixel${changes.length === 1 ? "" : "s"} on ${t.sprite.name}`,
         });
-        await animateAgentPixels(
+        const paint = await applyAnimatedPaint(
           actionId,
           previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
+          t.sprite.id,
+          t.frameIndex,
+          !!allFrames,
+          t.layer.id,
         );
-        interruptHumanStroke();
-        const res = useStore.getState().applyPixelChanges(changes, t.sprite.id, t.frameIndex, !!allFrames);
-        finishAgentAction(actionId, res.applied > 0 ? `Painted ${res.applied} pixel${res.applied === 1 ? "" : "s"}` : "No pixels changed");
-        log("set_pixels", `${res.applied} px on ${t.sprite.name}`);
-        if (res.applied === 0) return { ok: false, error: "no pixels were changed" };
+        finishAgentAction(actionId, paint.applied > 0 ? `Painted ${paint.applied} pixel${paint.applied === 1 ? "" : "s"}` : "No pixels changed");
+        log("set_pixels", `${paint.applied} px on ${t.sprite.name}`);
+        if (paint.applied === 0) return { ok: false, error: "no pixels were changed" };
         return {
           ok: true,
-          applied: res.applied,
-          addedPaletteColors: res.addedColors.map((i) => ({
+          applied: paint.applied,
+          addedPaletteColors: paint.addedColors.map((i) => ({
             index: i,
             hex: useStore.getState().project.palette[i],
           })),
@@ -237,6 +319,7 @@ export function registerTutorTools(): AbortController {
       spriteId?: string;
       frameIndex?: number;
       allFrames?: boolean;
+      layerId?: string;
     }>({
       name: "fill_region",
       title: "Fill rectangle region",
@@ -253,46 +336,39 @@ export function registerTutorTools(): AbortController {
           spriteId: { type: "string" },
           frameIndex: { type: "number" },
           allFrames: { type: "boolean" },
+          layerId: { type: "string" },
         },
         required: ["x", "y", "width", "height", "color"],
       },
-      execute: async ({ x, y, width, height, color, spriteId, frameIndex, allFrames }) => {
-        const t = target(spriteId, frameIndex);
+      execute: async ({ x, y, width, height, color, spriteId, frameIndex, allFrames, layerId }) => {
+        const t = target(spriteId, frameIndex, layerId);
         if ("error" in t) return { ok: false, error: t.error };
+        const lockError = layerLockError(t.layer.id, t.sprite.id);
+        if (lockError) return { ok: false, error: lockError };
         const rx = Math.round(x);
         const ry = Math.round(y);
         const rw = Math.round(width);
         const rh = Math.round(height);
-        const changes: PixelChange[] = [];
         const left = Math.max(0, rx);
         const top = Math.max(0, ry);
         const right = Math.min(t.sprite.width, rx + Math.max(0, rw));
         const bottom = Math.min(t.sprite.height, ry + Math.max(0, rh));
-        for (let yy = top; yy < bottom; yy++)
-          for (let xx = left; xx < right; xx++) changes.push({ x: xx, y: yy, color });
+        const colorError = paintColorError(color);
+        if (colorError) return { ok: false, error: colorError };
         const actionId = beginAgentAction({
           tool: "fill_region",
           spriteId: t.sprite.id,
           frameIndex: t.frameIndex,
-          message: `Filling ${changes.length} pixels on ${t.sprite.name}`,
+          message: `Filling ${Math.max(0, right - left) * Math.max(0, bottom - top)} pixels on ${t.sprite.name}`,
         });
-        await animateAgentPixels(
-          actionId,
-          previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
-        );
+        await showAgentAction(actionId, {
+          x: Math.max(0, Math.min(t.sprite.width - 1, Math.floor((left + right - 1) / 2))),
+          y: Math.max(0, Math.min(t.sprite.height - 1, Math.floor((top + bottom - 1) / 2))),
+        });
         interruptHumanStroke();
         const result = useStore
           .getState()
-          .fillRegion(
-            rx,
-            ry,
-            rw,
-            rh,
-            color,
-            t.sprite.id,
-            t.frameIndex,
-            !!allFrames,
-          );
+          .fillRegion(rx, ry, rw, rh, color, t.sprite.id, t.frameIndex, !!allFrames, t.layer.id);
         if (typeof result !== "number") {
           finishAgentAction(actionId, result.error);
           log("fill_region", `failed on ${t.sprite.name}`);
@@ -310,6 +386,7 @@ export function registerTutorTools(): AbortController {
       color: number | string | null;
       spriteId?: string;
       frameIndex?: number;
+      layerId?: string;
     }>({
       name: "flood_fill",
       title: "Flood fill region",
@@ -323,12 +400,15 @@ export function registerTutorTools(): AbortController {
           color: colorSchemaProp,
           spriteId: { type: "string" },
           frameIndex: { type: "number" },
+          layerId: { type: "string" },
         },
         required: ["x", "y", "color"],
       },
-      execute: ({ x, y, color, spriteId, frameIndex }) => {
-        const t = target(spriteId, frameIndex);
+      execute: async ({ x, y, color, spriteId, frameIndex, layerId }) => {
+        const t = target(spriteId, frameIndex, layerId);
         if ("error" in t) return { ok: false, error: t.error };
+        const lockError = layerLockError(t.layer.id, t.sprite.id);
+        if (lockError) return { ok: false, error: lockError };
         const sx = Math.round(x);
         const sy = Math.round(y);
         if (sx < 0 || sy < 0 || sx >= t.sprite.width || sy >= t.sprite.height)
@@ -336,9 +416,21 @@ export function registerTutorTools(): AbortController {
             ok: false,
             error: `start pixel (${sx},${sy}) is outside the ${t.sprite.width}x${t.sprite.height} canvas`,
           };
+        const actionId = beginAgentAction({
+          tool: "flood_fill",
+          spriteId: t.sprite.id,
+          frameIndex: t.frameIndex,
+          message: `Bucket-filling ${t.sprite.name} from (${sx},${sy})`,
+          status: "filling",
+        });
+        await showAgentAction(actionId, { x: sx, y: sy });
         interruptHumanStroke();
-        const result = useStore.getState().floodFillAt(sx, sy, color, t.sprite.id, t.frameIndex);
-        if (result && "error" in result) return { ok: false, error: result.error };
+        const result = useStore.getState().floodFillAt(sx, sy, color, t.sprite.id, t.frameIndex, t.layer.id);
+        if (result && "error" in result) {
+          finishAgentAction(actionId, result.error);
+          return { ok: false, error: result.error };
+        }
+        finishAgentAction(actionId, "Bucket fill complete");
         log("flood_fill", `${t.sprite.name} @ ${sx},${sy}`);
         return { ok: true };
       },
@@ -353,26 +445,26 @@ export function registerTutorTools(): AbortController {
         properties: {
           spriteId: { type: "string" },
           frameIndex: { type: "number" },
+          layerId: { type: "string" },
         },
       },
-      execute: async ({ spriteId, frameIndex }) => {
-        const t = target(spriteId, frameIndex);
+      execute: async ({ spriteId, frameIndex, layerId }) => {
+        const t = target(spriteId, frameIndex, layerId);
         if ("error" in t) return { ok: false, error: t.error };
-        const changes: PixelChange[] = [];
-        for (let y = 0; y < t.sprite.height; y++)
-          for (let x = 0; x < t.sprite.width; x++) changes.push({ x, y, color: null });
+        const lockError = layerLockError(t.layer.id, t.sprite.id);
+        if (lockError) return { ok: false, error: lockError };
         const actionId = beginAgentAction({
           tool: "clear_frame",
           spriteId: t.sprite.id,
           frameIndex: t.frameIndex,
           message: `Clearing ${t.sprite.name} frame ${t.frameIndex + 1}`,
         });
-        await animateAgentPixels(
-          actionId,
-          previewCells(changes, t.sprite.width, t.sprite.height, useStore.getState().project.palette),
-        );
+        await showAgentAction(actionId, {
+          x: Math.floor(t.sprite.width / 2),
+          y: Math.floor(t.sprite.height / 2),
+        });
         interruptHumanStroke();
-        useStore.getState().clearFrame(t.sprite.id, t.frameIndex);
+        useStore.getState().clearFrame(t.sprite.id, t.frameIndex, t.layer.id);
         finishAgentAction(actionId, "Frame cleared");
         log("clear_frame", `${t.sprite.name} frame ${t.frameIndex}`);
         return { ok: true };
@@ -380,30 +472,34 @@ export function registerTutorTools(): AbortController {
     }),
 
     defineTool<{
-      op: "flip_h" | "flip_v" | "rotate_90" | "shift" | "outline";
+      op: "flip_h" | "flip_v" | "rotate_90" | "rotate" | "shift" | "outline";
       dx?: number;
       dy?: number;
+      angle?: number;
       color?: number | string | null;
       frameIndices?: number[];
       spriteId?: string;
+      layerId?: string;
     }>({
       name: "transform_sprite",
       title: "Transform sprite",
       description:
-        "Apply a geometric transform to a sprite. Ops: flip_h, flip_v, rotate_90 (clockwise), shift (wrap-around move by dx/dy), outline (adds outlineColor around silhouettes). Applies to all frames unless frameIndices given.",
+        "Apply a geometric transform to a sprite. Ops: flip_h, flip_v, rotate_90 (clockwise), rotate (RotSprite-style nearest-neighbor angle in degrees), shift (wrap-around move by dx/dy), outline (adds outlineColor around silhouettes). Applies to all frames unless frameIndices given.",
       inputSchema: {
         type: "object",
         properties: {
-          op: { type: "string", enum: ["flip_h", "flip_v", "rotate_90", "shift", "outline"] },
+          op: { type: "string", enum: ["flip_h", "flip_v", "rotate_90", "rotate", "shift", "outline"] },
           dx: { type: "number", description: "shift only: horizontal offset" },
           dy: { type: "number", description: "shift only: vertical offset" },
+          angle: { type: "number", description: "rotate only: clockwise angle in degrees; keeps the sprite dimensions" },
           color: { ...colorSchemaProp, description: "outline only: outline color (defaults to palette index 0)" },
           frameIndices: { type: "array", items: { type: "number" }, description: "Which frames; omit for all." },
           spriteId: { type: "string" },
+          layerId: { type: "string" },
         },
         required: ["op"],
       },
-      execute: async ({ op, dx, dy, color, frameIndices, spriteId }) => {
+      execute: async ({ op, dx, dy, angle, color, frameIndices, spriteId, layerId }) => {
         const st = useStore.getState();
         if (
           op === "shift" &&
@@ -412,8 +508,13 @@ export function registerTutorTools(): AbortController {
         ) {
           return { ok: false, error: "dx/dy must be finite numbers" };
         }
-        const resolved = target(spriteId);
+        if (op === "rotate" && (angle !== undefined && (typeof angle !== "number" || !Number.isFinite(angle)))) {
+          return { ok: false, error: "angle must be a finite number" };
+        }
+        const resolved = target(spriteId, undefined, layerId);
         if ("error" in resolved) return { ok: false, error: resolved.error };
+        const lockError = layerLockError(resolved.layer.id, resolved.sprite.id);
+        if (lockError) return { ok: false, error: lockError };
         const actionId = beginAgentAction({
           tool: "transform_sprite",
           spriteId: resolved.sprite.id,
@@ -429,9 +530,11 @@ export function registerTutorTools(): AbortController {
         const err = st.transform(op, {
           dx: typeof dx === "number" ? Math.round(dx) : undefined,
           dy: typeof dy === "number" ? Math.round(dy) : undefined,
+          angle: typeof angle === "number" ? angle : undefined,
           color,
           frameIndices: Array.isArray(frameIndices) ? frameIndices : undefined,
           spriteId,
+          layerId,
         });
         finishAgentAction(actionId, err ? `Could not apply ${op.replaceAll("_", " ")}` : `${op.replaceAll("_", " ")} complete`);
         log("transform_sprite", `${op}${err ? " failed" : ""}`);
@@ -439,7 +542,7 @@ export function registerTutorTools(): AbortController {
       },
     }),
 
-    defineTool<{ from: number | string | null; to: number | string | null; spriteId?: string }>({
+    defineTool<{ from: number | string | null; to: number | string | null; spriteId?: string; layerId?: string }>({
       name: "replace_color",
       title: "Replace color everywhere",
       description:
@@ -450,13 +553,16 @@ export function registerTutorTools(): AbortController {
           from: { ...colorSchemaProp, description: "Color to replace." },
           to: { ...colorSchemaProp, description: "Replacement color ('transparent'/null erases)." },
           spriteId: { type: "string", description: "Scope to one sprite; omit for all sprites." },
+          layerId: { type: "string", description: "Scope to one layer; omit for all layers." },
         },
         required: ["from", "to"],
       },
-      execute: async ({ from, to, spriteId }) => {
+      execute: async ({ from, to, spriteId, layerId }) => {
         const st = useStore.getState();
-        const resolved = target(spriteId);
+        const resolved = target(spriteId, undefined, layerId);
         if ("error" in resolved) return { ok: false, error: resolved.error };
+        const lockError = layerLockError(resolved.layer.id, resolved.sprite.id);
+        if (lockError) return { ok: false, error: lockError };
         const actionId = beginAgentAction({
           tool: "replace_color",
           spriteId: resolved.sprite.id,
@@ -469,7 +575,7 @@ export function registerTutorTools(): AbortController {
           y: Math.floor(resolved.sprite.height / 2),
         });
         interruptHumanStroke();
-        const result = st.replaceColor(from, to, spriteId);
+        const result = st.replaceColor(from, to, spriteId, layerId);
         if (typeof result !== "number") {
           finishAgentAction(actionId, result.error);
           log("replace_color", "failed to remap colors");
@@ -512,6 +618,41 @@ export function registerTutorTools(): AbortController {
       },
     }),
 
+    defineTool<{ index: number; alpha: number }>({
+      name: "set_palette_alpha",
+      title: "Set palette alpha",
+      description: "Set the selected palette entry's opacity from 0 to 1 without changing its color index.",
+      inputSchema: {
+        type: "object",
+        properties: { index: { type: "number" }, alpha: { type: "number", minimum: 0, maximum: 1 } },
+        required: ["index", "alpha"],
+      },
+      execute: ({ index, alpha }) => {
+        const ok = useStore.getState().setPaletteAlpha(Math.round(index), alpha);
+        log("set_palette_alpha", ok ? `palette ${Math.round(index)}` : "invalid palette entry");
+        return ok ? { ok: true, index: Math.round(index), alpha: Math.max(0, Math.min(1, alpha)) } : { ok: false, error: "palette index not found" };
+      },
+    }),
+
+    defineTool<{ fromIndex: number; toIndex: number }>({
+      name: "move_palette_color",
+      title: "Move palette color",
+      description: "Reorder a palette entry while remapping all pixel indices so the artwork keeps its appearance.",
+      inputSchema: {
+        type: "object",
+        properties: { fromIndex: { type: "number" }, toIndex: { type: "number" } },
+        required: ["fromIndex", "toIndex"],
+      },
+      execute: ({ fromIndex, toIndex }) => {
+        const from = Math.round(fromIndex);
+        const to = Math.round(toIndex);
+        const ok = useStore.getState().movePaletteColor(from, to);
+        if (ok && useEditor.getState().colorIdx === from) useEditor.getState().setColor(to);
+        log("move_palette_color", ok ? `${from} → ${to}` : "invalid palette move");
+        return ok ? { ok: true, fromIndex: from, toIndex: to } : { ok: false, error: "palette indices are invalid or identical" };
+      },
+    }),
+
     defineTool<TargetedInput>({
       name: "set_active_sprite",
       title: "Point human at a sprite",
@@ -546,7 +687,7 @@ export function registerTutorTools(): AbortController {
       },
     }),
 
-    defineTool<{ spriteId?: string; copyFrameIndex?: number }>({
+    defineTool<{ spriteId?: string; copyFrameIndex?: number; layerId?: string }>({
       name: "add_frame",
       title: "Add animation frame",
       description:
@@ -556,10 +697,11 @@ export function registerTutorTools(): AbortController {
         properties: {
           spriteId: { type: "string" },
           copyFrameIndex: { type: "number", description: "Frame to duplicate. Defaults to the last frame." },
+          layerId: { type: "string", description: "Layer id. Defaults to the selected layer." },
         },
       },
-      execute: async ({ spriteId, copyFrameIndex }) => {
-        const resolved = target(spriteId);
+      execute: async ({ spriteId, copyFrameIndex, layerId }) => {
+        const resolved = target(spriteId, undefined, layerId);
         if ("error" in resolved) return { ok: false, error: resolved.error };
         const actionId = beginAgentAction({
           tool: "add_frame",
@@ -573,7 +715,7 @@ export function registerTutorTools(): AbortController {
           y: Math.floor(resolved.sprite.height / 2),
         });
         interruptHumanStroke();
-        const idx = useStore.getState().addFrame(spriteId, copyFrameIndex);
+        const idx = useStore.getState().addFrame(spriteId, copyFrameIndex, resolved.layer.id);
         if (idx < 0) {
           finishAgentAction(actionId, "Could not add frame");
           return { ok: false, error: "could not add frame" };
@@ -584,7 +726,7 @@ export function registerTutorTools(): AbortController {
       },
     }),
 
-    defineTool<{ frameIndex: number; spriteId?: string; confirm: boolean }>({
+    defineTool<{ frameIndex: number; spriteId?: string; layerId?: string; confirm: boolean }>({
       name: "delete_frame",
       title: "Delete animation frame",
       description:
@@ -594,20 +736,312 @@ export function registerTutorTools(): AbortController {
         properties: {
           frameIndex: { type: "number", description: "Zero-based frame to delete" },
           spriteId: { type: "string" },
+          layerId: { type: "string", description: "Layer id. Defaults to the selected layer." },
           confirm: { type: "boolean", description: "Must be true to perform the deletion" },
         },
         required: ["frameIndex", "confirm"],
       },
-      execute: ({ frameIndex, spriteId, confirm }) => {
+      execute: ({ frameIndex, spriteId, layerId, confirm }) => {
         if (confirm !== true) return { ok: false, error: "deletion requires confirm:true" };
-        const t = target(spriteId, frameIndex);
+        const t = target(spriteId, frameIndex, layerId);
         if ("error" in t) return { ok: false, error: t.error };
         interruptHumanStroke();
-        const ok = useStore.getState().deleteFrame(frameIndex, t.sprite.id);
+        const ok = useStore.getState().deleteFrame(frameIndex, t.sprite.id, t.layer.id);
         log("delete_frame", ok ? `${t.sprite.name} frame ${frameIndex}` : `refused (${t.sprite.name})`);
         return ok
           ? { ok: true }
           : { ok: false, error: "cannot delete the sprite's last remaining frame" };
+      },
+    }),
+
+    defineTool<{ frameIndex: number; targetIndex: number; spriteId?: string; layerId?: string }>({
+      name: "link_frame",
+      title: "Link animation cels",
+      description: "Link two cels on one layer so future pixel edits stay synchronized across both frames.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          frameIndex: { type: "number", description: "Zero-based cel to link" },
+          targetIndex: { type: "number", description: "Zero-based cel to link it with" },
+          spriteId: { type: "string" },
+          layerId: { type: "string", description: "Layer id. Defaults to the selected layer." },
+        },
+        required: ["frameIndex", "targetIndex"],
+      },
+      execute: ({ frameIndex, targetIndex, spriteId, layerId }) => {
+        const t = target(spriteId, frameIndex, layerId);
+        if ("error" in t) return { ok: false, error: t.error };
+        const ok = useStore.getState().linkFrame(frameIndex, Math.round(targetIndex), t.sprite.id, t.layer.id);
+        log("link_frame", ok ? `${t.sprite.name} ${frameIndex} ↔ ${targetIndex}` : "invalid cel pair");
+        return ok ? { ok: true } : { ok: false, error: "both cels must exist and be different" };
+      },
+    }),
+
+    defineTool<{ frameIndex: number; spriteId?: string; layerId?: string }>({
+      name: "unlink_frame",
+      title: "Unlink animation cel",
+      description: "Detach one cel from its linked group so it can be edited independently.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          frameIndex: { type: "number" },
+          spriteId: { type: "string" },
+          layerId: { type: "string", description: "Layer id. Defaults to the selected layer." },
+        },
+        required: ["frameIndex"],
+      },
+      execute: ({ frameIndex, spriteId, layerId }) => {
+        const t = target(spriteId, frameIndex, layerId);
+        if ("error" in t) return { ok: false, error: t.error };
+        const ok = useStore.getState().unlinkFrame(frameIndex, t.sprite.id, t.layer.id);
+        log("unlink_frame", ok ? `${t.sprite.name} frame ${frameIndex}` : "cel was not linked");
+        return ok ? { ok: true } : { ok: false, error: "cel is not linked" };
+      },
+    }),
+
+    defineTool<{ spriteId?: string; name?: string; aboveLayerId?: string }>({
+      name: "add_layer",
+      title: "Create layer",
+      description: "Create an empty animation layer above the selected layer. It starts with matching cels so it can be painted immediately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          spriteId: { type: "string", description: "Sprite id; defaults to the active sprite." },
+          name: { type: "string", description: "Layer name; defaults to Layer." },
+          aboveLayerId: { type: "string", description: "Insert above this layer; defaults to the top." },
+        },
+      },
+      execute: ({ spriteId, name, aboveLayerId }) => {
+        const id = useStore.getState().addLayer(spriteId, name, aboveLayerId);
+        if (!id) return { ok: false, error: "could not create layer (capacity or sprite error)" };
+        useEditor.getState().setActiveLayerId(id);
+        log("add_layer", `${name?.trim() || "Layer"} created`);
+        return { ok: true, layerId: id };
+      },
+    }),
+
+    defineTool<{ layerId: string; spriteId?: string }>({
+      name: "duplicate_layer",
+      title: "Duplicate layer",
+      description: "Copy a layer, including every cel, and place the copy directly above it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          layerId: { type: "string" },
+          spriteId: { type: "string" },
+        },
+        required: ["layerId"],
+      },
+      execute: ({ layerId, spriteId }) => {
+        const id = useStore.getState().duplicateLayer(layerId, spriteId);
+        if (!id) return { ok: false, error: "could not duplicate layer" };
+        useEditor.getState().setActiveLayerId(id);
+        log("duplicate_layer", layerId);
+        return { ok: true, layerId: id };
+      },
+    }),
+
+    defineTool<{ layerId: string; spriteId?: string; confirm: boolean }>({
+      name: "delete_layer",
+      title: "Delete layer",
+      description: "Delete a layer after explicit confirmation. A sprite must keep at least one layer.",
+      inputSchema: {
+        type: "object",
+        properties: { layerId: { type: "string" }, spriteId: { type: "string" }, confirm: { type: "boolean" } },
+        required: ["layerId", "confirm"],
+      },
+      execute: ({ layerId, spriteId, confirm }) => {
+        if (confirm !== true) return { ok: false, error: "deletion requires confirm:true" };
+        const ok = useStore.getState().deleteLayer(layerId, spriteId);
+        if (!ok) return { ok: false, error: "cannot delete the layer (it may be the last layer)" };
+        const active = useStore.getState().activeSprite();
+        useEditor.getState().setActiveLayerId(active?.layers?.[0]?.id ?? null);
+        log("delete_layer", layerId);
+        return { ok: true };
+      },
+    }),
+
+    defineTool<{ layerId: string; direction: -1 | 1; spriteId?: string }>({
+      name: "move_layer",
+      title: "Move layer",
+      description: "Move a layer one slot up or down in the stack. Direction 1 moves toward the top.",
+      inputSchema: {
+        type: "object",
+        properties: { layerId: { type: "string" }, direction: { type: "number", enum: [-1, 1] }, spriteId: { type: "string" } },
+        required: ["layerId", "direction"],
+      },
+      execute: ({ layerId, direction, spriteId }) => {
+        if (direction !== -1 && direction !== 1) return { ok: false, error: "direction must be -1 or 1" };
+        const ok = useStore.getState().moveLayer(layerId, direction, spriteId);
+        log("move_layer", ok ? `${layerId} ${direction > 0 ? "up" : "down"}` : "edge of stack");
+        return ok ? { ok: true } : { ok: false, error: "layer is already at that edge" };
+      },
+    }),
+
+    defineTool<{
+      layerId: string;
+      spriteId?: string;
+      name?: string;
+      visible?: boolean;
+      locked?: boolean;
+      opacity?: number;
+      blendMode?: "normal" | "multiply" | "screen" | "overlay";
+    }>({
+      name: "set_layer_properties",
+      title: "Set layer properties",
+      description: "Update a layer name, visibility, lock, opacity, or blend mode.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          layerId: { type: "string" },
+          spriteId: { type: "string" },
+          name: { type: "string" },
+          visible: { type: "boolean" },
+          locked: { type: "boolean" },
+          opacity: { type: "number", minimum: 0, maximum: 1 },
+          blendMode: { type: "string", enum: ["normal", "multiply", "screen", "overlay"] },
+        },
+        required: ["layerId"],
+      },
+      execute: ({ layerId, spriteId, name, visible, locked, opacity, blendMode }) => {
+        const store = useStore.getState();
+        let changed = false;
+        if (name !== undefined) changed = store.renameLayer(layerId, name, spriteId) || changed;
+        if (visible !== undefined) changed = store.setLayerVisibility(layerId, visible, spriteId) || changed;
+        if (locked !== undefined) changed = store.setLayerLocked(layerId, locked, spriteId) || changed;
+        if (opacity !== undefined) changed = store.setLayerOpacity(layerId, opacity, spriteId) || changed;
+        if (blendMode !== undefined) changed = store.setLayerBlendMode(layerId, blendMode, spriteId) || changed;
+        if (!changed) return { ok: false, error: "layer not found or no valid property was supplied" };
+        log("set_layer_properties", layerId);
+        return { ok: true, layerId };
+      },
+    }),
+
+    defineTool<{
+      mode?: "forward" | "reverse" | "ping_pong";
+      tagId?: string | null;
+      fps?: number;
+      playing?: boolean;
+      onion?: boolean;
+      onionMode?: "tint" | "red_blue";
+    }>({
+      name: "set_animation_preview",
+      title: "Set animation preview",
+      description: "Control playback mode, tagged range, speed, and onion-skin display without changing sprite pixels.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["forward", "reverse", "ping_pong"] },
+          tagId: { anyOf: [{ type: "string" }, { type: "null" }] },
+          fps: { type: "number", minimum: 1, maximum: 30 },
+          playing: { type: "boolean" },
+          onion: { type: "boolean" },
+          onionMode: { type: "string", enum: ["tint", "red_blue"] },
+        },
+      },
+      execute: ({ mode, tagId, fps, playing, onion, onionMode }) => {
+        const editor = useEditor.getState();
+        const sprite = useStore.getState().activeSprite();
+        if (tagId !== undefined && tagId !== null && !sprite?.frameTags?.some((tag) => tag.id === tagId)) {
+          return { ok: false, error: `animation tag '${tagId}' not found on the active sprite` };
+        }
+        if (mode !== undefined) editor.setPlaybackMode(mode);
+        if (tagId !== undefined) editor.setPlaybackTagId(tagId);
+        if (fps !== undefined) editor.setFps(fps);
+        if (playing !== undefined) editor.setPlaying(playing);
+        if (onion !== undefined) {
+          if (useEditor.getState().onion !== onion) editor.toggleOnion();
+        }
+        if (onionMode !== undefined) editor.setOnionMode(onionMode);
+        log("set_animation_preview", mode ?? "preview updated");
+        return {
+          ok: true,
+          mode: useEditor.getState().playbackMode,
+          tagId: useEditor.getState().playbackTagId,
+          fps: useEditor.getState().fps,
+          playing: useEditor.getState().playing,
+          onion: useEditor.getState().onion,
+          onionMode: useEditor.getState().onionMode,
+        };
+      },
+    }),
+
+    defineTool<{
+      zoom?: number;
+      showGrid?: boolean;
+      pixelPerfect?: boolean;
+      shadingMode?: boolean;
+      tiledMode?: boolean;
+      brushMode?: "solid" | "checker" | "dots";
+    }>({
+      name: "set_canvas_options",
+      title: "Set canvas options",
+      description: "Set zoom, grid, pixel-perfect stroke, shading ink, tiled preview, and dither brush options.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          zoom: { type: "number", minimum: 1, maximum: 48 },
+          showGrid: { type: "boolean" },
+          pixelPerfect: { type: "boolean" },
+          shadingMode: { type: "boolean" },
+          tiledMode: { type: "boolean" },
+          brushMode: { type: "string", enum: ["solid", "checker", "dots"] },
+        },
+      },
+      execute: ({ zoom, showGrid, pixelPerfect, shadingMode, tiledMode, brushMode }) => {
+        const editor = useEditor.getState();
+        if (zoom !== undefined) editor.setZoom(zoom);
+        if (showGrid !== undefined) editor.setShowGrid(showGrid);
+        if (pixelPerfect !== undefined) editor.setPixelPerfect(pixelPerfect);
+        if (shadingMode !== undefined) editor.setShadingMode(shadingMode);
+        if (tiledMode !== undefined) editor.setTiledMode(tiledMode);
+        if (brushMode !== undefined) editor.setBrushMode(brushMode);
+        log("set_canvas_options", "canvas view updated");
+        const current = useEditor.getState();
+        return {
+          ok: true,
+          zoom: current.zoom,
+          showGrid: current.showGrid,
+          pixelPerfect: current.pixelPerfect,
+          shadingMode: current.shadingMode,
+          tiledMode: current.tiledMode,
+          brushMode: current.brushMode,
+        };
+      },
+    }),
+
+    defineTool<{ spriteId?: string; name: string; from?: number; to?: number; color?: string }>({
+      name: "add_frame_tag",
+      title: "Tag animation frames",
+      description: "Create a named animation section over a range of frames, such as idle or walk.",
+      inputSchema: {
+        type: "object",
+        properties: { spriteId: { type: "string" }, name: { type: "string" }, from: { type: "number" }, to: { type: "number" }, color: { type: "string" } },
+        required: ["name"],
+      },
+      execute: ({ spriteId, name, from, to, color }) => {
+        const id = useStore.getState().addFrameTag({ name, from, to, color }, spriteId);
+        if (!id) return { ok: false, error: "could not create frame tag" };
+        log("add_frame_tag", name);
+        return { ok: true, tagId: id };
+      },
+    }),
+
+    defineTool<{ tagId: string; spriteId?: string; confirm: boolean }>({
+      name: "delete_frame_tag",
+      title: "Delete frame tag",
+      description: "Delete a named animation section after explicit confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: { tagId: { type: "string" }, spriteId: { type: "string" }, confirm: { type: "boolean" } },
+        required: ["tagId", "confirm"],
+      },
+      execute: ({ tagId, spriteId, confirm }) => {
+        if (confirm !== true) return { ok: false, error: "deletion requires confirm:true" };
+        const ok = useStore.getState().deleteFrameTag(tagId, spriteId);
+        if (!ok) return { ok: false, error: "frame tag not found" };
+        log("delete_frame_tag", tagId);
+        return { ok: true };
       },
     }),
 

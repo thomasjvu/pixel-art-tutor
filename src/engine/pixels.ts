@@ -52,6 +52,28 @@ export function* bresenhamLine(
   }
 }
 
+/**
+ * A small pixel-art cleanup pass for freehand joins. Bresenham already gives
+ * the correct raster line; this removes a one-cell corner when two neighbors
+ * are diagonally adjacent, which prevents the isolated stair-step that
+ * appears when a human changes direction between pointer events.
+ */
+export function pixelPerfectLine(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): Array<[number, number]> {
+  const points = [...bresenhamLine(x0, y0, x1, y1)];
+  if (points.length < 3) return points;
+  return points.filter((_, index) => {
+    if (index === 0 || index === points.length - 1) return true;
+    const previous = points[index - 1]!;
+    const following = points[index + 1]!;
+    return Math.abs(previous[0] - following[0]) !== 1 || Math.abs(previous[1] - following[1]) !== 1;
+  });
+}
+
 export function floodFill(
   pixels: number[],
   w: number,
@@ -96,6 +118,26 @@ export function rotate90(pixels: number[], w: number, h: number): { pixels: numb
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) out[x * h + (h - 1 - y)] = pixels[y * w + x];
   return { pixels: out, w: h, h: w };
+}
+
+/** Rotate in place around the sprite center with nearest-neighbor sampling. */
+export function rotateNearest(pixels: number[], w: number, h: number, degrees: number): number[] {
+  const out = new Array<number>(w * h).fill(TRANSPARENT);
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const cx = (w - 1) / 2;
+  const cy = (h - 1) / 2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const sourceX = Math.round(cos * dx + sin * dy + cx);
+      const sourceY = Math.round(-sin * dx + cos * dy + cy);
+      if (inBounds(sourceX, sourceY, w, h)) out[y * w + x] = pixels[sourceY * w + sourceX]!;
+    }
+  }
+  return out;
 }
 
 export function shiftWrap(pixels: number[], w: number, h: number, dx: number, dy: number): number[] {

@@ -3,7 +3,34 @@ import { useStore } from "../store/projectStore";
 import { useEditor } from "../store/editorStore";
 import { useUi, type AgentPresenceState } from "../store/uiStore";
 import type { RoomPresence } from "../realtime/protocol";
-import { TRANSPARENT } from "../types";
+import { spriteLayers, TRANSPARENT } from "../types";
+
+function colorLuma(hex: string | undefined): number {
+  if (!hex) return 0;
+  const value = hex.replace("#", "");
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  return (Number.isFinite(r) ? r : 0) * 0.299 + (Number.isFinite(g) ? g : 0) * 0.587 + (Number.isFinite(b) ? b : 0) * 0.114;
+}
+
+function shadingIndex(frame: { pixels: number[] } | undefined, palette: string[], width: number, x: number, y: number, requested: number): number {
+  const current = frame?.pixels[y * width + x];
+  if (current === undefined || current < 0 || !palette[current]) return requested;
+  const direction = colorLuma(palette[requested]) >= colorLuma(palette[current]) ? 1 : -1;
+  const target = colorLuma(palette[current]) + direction * 28;
+  let best = requested;
+  let distance = Number.POSITIVE_INFINITY;
+  palette.forEach((hex, index) => {
+    if (index === current) return;
+    const nextDistance = Math.abs(colorLuma(hex) - target);
+    if (nextDistance < distance) {
+      distance = nextDistance;
+      best = index;
+    }
+  });
+  return best;
+}
 
 export function CanvasStage() {
   const project = useStore((s) => s.project);
@@ -13,22 +40,58 @@ export function CanvasStage() {
   const floodFillAt = useStore((s) => s.floodFillAt);
   const selectFrame = useStore((s) => s.selectFrame);
 
-  const { tool, colorIdx, zoom, onion, showGrid, fps, playing } = useEditor();
+  const {
+    tool,
+    colorIdx,
+    zoom,
+    onion,
+    onionMode,
+    showGrid,
+    fps,
+    playing,
+    playbackMode,
+    playbackTagId,
+    pixelPerfect,
+    brushMode,
+    shadingMode,
+    tiledMode,
+    layerLocked: editorLayerLocked,
+  } = useEditor();
   const setColor = useEditor((s) => s.setColor);
+  const setZoom = useEditor((s) => s.setZoom);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const activeLayerId = useEditor((s) => s.activeLayerId);
+  const setActiveLayerId = useEditor((s) => s.setActiveLayerId);
+  const setLayerLocked = useEditor((s) => s.setLayerLocked);
+  const setLayerVisible = useEditor((s) => s.setLayerVisible);
   const selection = useEditor((s) => s.selection);
   const setSelection = useEditor((s) => s.setSelection);
 
   const sprite = useStore((s) => s.activeSprite());
+  const layers = useMemo(() => (sprite ? spriteLayers(sprite) : []), [sprite]);
+  const activeLayer = useMemo(
+    () => layers.find((layer) => layer.id === activeLayerId) ?? layers[0],
+    [activeLayerId, layers],
+  );
+  const layerLocked = activeLayer?.locked ?? editorLayerLocked;
+  const layerVisible = activeLayer?.visible ?? true;
   const agentPresence = useUi((s) => s.agentPresence);
   const roomPeers = useUi((s) => s.roomPeers);
-  const remotePeers = Object.values(roomPeers);
+  const remotePeers = useMemo(() => Object.values(roomPeers), [roomPeers]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragging = useRef(false);
   const [canvasBox, setCanvasBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const displayCellSize = zoom;
   const lastCell = useRef<[number, number] | null>(null);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [moveDrag, setMoveDrag] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
+
+  useEffect(() => {
+    if (!activeLayer) return;
+    if (activeLayerId !== activeLayer.id) setActiveLayerId(activeLayer.id);
+    if (editorLayerLocked !== activeLayer.locked) setLayerLocked(activeLayer.locked);
+    if (useEditor.getState().layerVisible !== activeLayer.visible) setLayerVisible(activeLayer.visible);
+  }, [activeLayer, activeLayerId, editorLayerLocked, setActiveLayerId, setLayerLocked, setLayerVisible]);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -49,26 +112,44 @@ export function CanvasStage() {
     observer.observe(canvas);
     observer.observe(wrap);
     return () => observer.disconnect();
-  }, [sprite, zoom]);
+  }, [displayCellSize]);
 
-  // play mode: advance frames
+  // Play the active tag (or the whole active layer) with an explicit playback
+  // mode. The ref keeps ping-pong direction stable between ticks without
+  // making every tick a React render.
+  const playbackDirection = useRef<1 | -1>(1);
   useEffect(() => {
-    if (!playing || !sprite || sprite.frames.length < 2) return;
+    if (!playing || !sprite || !activeLayer || activeLayer.frames.length < 2) return;
+    const tag = sprite.frameTags?.find((entry) => entry.id === playbackTagId);
+    const from = tag ? Math.min(tag.from, activeLayer.frames.length - 1) : 0;
+    const to = tag ? Math.min(tag.to, activeLayer.frames.length - 1) : activeLayer.frames.length - 1;
+    playbackDirection.current = playbackMode === "reverse" ? -1 : 1;
     const id = setInterval(() => {
       const st = useStore.getState();
-      const len = st.activeSprite()?.frames.length ?? 0;
-      if (len < 2) return;
-      st.selectFrame((st.activeFrameIndex + 1) % len);
+      const current = st.activeFrameIndex;
+      let next = current;
+      if (playbackMode === "reverse") {
+        next = current <= from ? to : current - 1;
+      } else if (playbackMode === "ping_pong") {
+        if (current >= to) playbackDirection.current = -1;
+        if (current <= from) playbackDirection.current = 1;
+        next = current + playbackDirection.current;
+      } else {
+        next = current >= to ? from : current + 1;
+      }
+      st.selectFrame(Math.max(from, Math.min(to, next)));
     }, 1000 / fps);
     return () => clearInterval(id);
-  }, [playing, sprite?.id, fps]);
+  }, [playing, sprite, activeLayer, playbackTagId, playbackMode, fps]);
 
   useEffect(() => {
-    if (!playing && sprite && activeFrameIndex > sprite.frames.length - 1) selectFrame(0);
-  }, [playing, sprite, activeFrameIndex, selectFrame]);
+    if (!playing && activeLayer && activeFrameIndex > activeLayer.frames.length - 1) selectFrame(0);
+  }, [playing, activeLayer, activeFrameIndex, selectFrame]);
 
-  const width = (sprite?.width ?? 0) * zoom;
-  const height = (sprite?.height ?? 0) * zoom;
+  const width = (sprite?.width ?? 0) * displayCellSize;
+  const height = (sprite?.height ?? 0) * displayCellSize;
+  const canvasWidth = tiledMode ? width * 3 : width;
+  const canvasHeight = tiledMode ? height * 3 : height;
 
   // Fine-grained neutral checker so transparency reads without shouting,
   // independent of zoom (a zoom-sized checker turns into a waffle).
@@ -88,7 +169,7 @@ export function CanvasStage() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !sprite) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d")!;
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -99,39 +180,59 @@ export function CanvasStage() {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-    const frame = sprite.frames[activeFrameIndex];
-    if (!frame) return;
+    const frame = activeLayer?.frames[Math.min(activeFrameIndex, (activeLayer?.frames.length ?? 1) - 1)];
+    if (!frame || !activeLayer) return;
 
-    // Onion skin shows both adjacent cels, so it remains useful on the first
-    // and last frames instead of silently doing nothing at the timeline edges.
-    if (onion && sprite.frames.length > 1) {
-      const ghostFrames = [
-        activeFrameIndex > 0 ? { frame: sprite.frames[activeFrameIndex - 1], alpha: 0.24 } : null,
-        activeFrameIndex < sprite.frames.length - 1
-          ? { frame: sprite.frames[activeFrameIndex + 1], alpha: 0.15 }
-          : null,
-      ];
-      for (const ghost of ghostFrames) {
-        if (!ghost) continue;
-        ctx.globalAlpha = ghost.alpha;
-        for (let y = 0; y < sprite.height; y++)
-          for (let x = 0; x < sprite.width; x++) {
-            const p = ghost.frame.pixels[y * sprite.width + x];
-            if (p === TRANSPARENT || !project.palette[p]) continue;
-            ctx.fillStyle = project.palette[p];
-            ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
-          }
-      }
+    function drawFramePixels(frameToDraw: { pixels: number[] }, opacity: number, blendMode: GlobalCompositeOperation = "source-over") {
+      ctx.globalCompositeOperation = blendMode;
+      for (let y = 0; y < sprite.height; y++)
+        for (let x = 0; x < sprite.width; x++) {
+          const p = frameToDraw.pixels[y * sprite.width + x];
+          if (p === TRANSPARENT || !project.palette[p]) continue;
+          ctx.globalAlpha = opacity * (project.paletteAlpha?.[p] ?? 1);
+          ctx.fillStyle = project.palette[p];
+          ctx.fillRect(x * displayCellSize, y * displayCellSize, displayCellSize, displayCellSize);
+        }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    function drawOnionFrame(frameToDraw: { pixels: number[] }, color: string, alpha: number) {
+      for (let y = 0; y < sprite.height; y++)
+        for (let x = 0; x < sprite.width; x++) {
+          const p = frameToDraw.pixels[y * sprite.width + x];
+          if (p === TRANSPARENT || !project.palette[p]) continue;
+          ctx.globalAlpha = alpha * (project.paletteAlpha?.[p] ?? 1);
+          ctx.fillStyle = color;
+          ctx.fillRect(x * displayCellSize, y * displayCellSize, displayCellSize, displayCellSize);
+        }
       ctx.globalAlpha = 1;
     }
 
-    for (let y = 0; y < sprite.height; y++)
-      for (let x = 0; x < sprite.width; x++) {
-        const p = frame.pixels[y * sprite.width + x];
-        if (p === TRANSPARENT || !project.palette[p]) continue;
-        ctx.fillStyle = project.palette[p];
-        ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+    // Onion skin shows adjacent cels underneath the composite. Red/blue mode
+    // keeps the direction of motion legible even when the palette is dark.
+    if (onion && activeLayer.frames.length > 1 && layerVisible) {
+      const previous = activeFrameIndex > 0 ? activeLayer.frames[activeFrameIndex - 1] : null;
+      const following = activeFrameIndex < activeLayer.frames.length - 1 ? activeLayer.frames[activeFrameIndex + 1] : null;
+      if (onionMode === "red_blue") {
+        if (previous) drawOnionFrame(previous, "#ff4d5a", 0.3);
+        if (following) drawOnionFrame(following, "#4d8dff", 0.22);
+      } else {
+        if (previous) drawFramePixels(previous, 0.24);
+        if (following) drawFramePixels(following, 0.15);
       }
+    }
+
+    // Composite visible layers from bottom to top. Canvas blend modes mirror
+    // the small set exposed by the layer inspector.
+    for (const layer of layers) {
+      if (!layer.visible) continue;
+      const layerFrame = layer.frames[Math.min(activeFrameIndex, layer.frames.length - 1)];
+      if (layerFrame) {
+        const blendMode: GlobalCompositeOperation = layer.blendMode === "normal" ? "source-over" : layer.blendMode;
+        drawFramePixels(layerFrame, layer.opacity, blendMode);
+      }
+    }
 
     const preview =
       agentPresence?.spriteId === sprite.id && agentPresence.frameIndex === activeFrameIndex
@@ -155,30 +256,32 @@ export function CanvasStage() {
         for (let x = sx0; x < sx1; x++) {
           if (pattern) {
             ctx.fillStyle = pattern;
-            ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+            ctx.fillRect(x * displayCellSize, y * displayCellSize, displayCellSize, displayCellSize);
           }
           const p = frame.pixels[y * sprite.width + x];
           if (p === TRANSPARENT || !project.palette[p]) continue;
           const nx = x + moveDrag.dx;
           const ny = y + moveDrag.dy;
           if (nx < 0 || ny < 0 || nx >= sprite.width || ny >= sprite.height) continue;
+          ctx.globalAlpha = activeLayer.opacity * (project.paletteAlpha?.[p] ?? 1);
           ctx.fillStyle = project.palette[p];
-          ctx.fillRect(nx * zoom, ny * zoom, zoom, zoom);
+          ctx.fillRect(nx * displayCellSize, ny * displayCellSize, displayCellSize, displayCellSize);
         }
+      ctx.globalAlpha = 1;
     }
 
-    if (preview.length) {
+    if (layerVisible && preview.length) {
       ctx.globalAlpha = 0.78;
       for (const cell of preview) {
         if (cell.x < 0 || cell.y < 0 || cell.x >= sprite.width || cell.y >= sprite.height) continue;
         if (cell.color === null) {
           if (pattern) {
             ctx.fillStyle = pattern;
-            ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+            ctx.fillRect(cell.x * displayCellSize, cell.y * displayCellSize, displayCellSize, displayCellSize);
           }
         } else {
           ctx.fillStyle = cell.color;
-          ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+          ctx.fillRect(cell.x * displayCellSize, cell.y * displayCellSize, displayCellSize, displayCellSize);
         }
       }
       ctx.globalAlpha = 1;
@@ -193,7 +296,7 @@ export function CanvasStage() {
         peer.frameIndex === activeFrameIndex &&
         peer.preview.length > 0,
     );
-    if (remotePreviews.length > 0) {
+    if (layerVisible && remotePreviews.length > 0) {
       ctx.globalAlpha = 0.6;
       for (const peer of remotePreviews) {
         for (const cell of peer.preview) {
@@ -201,11 +304,11 @@ export function CanvasStage() {
           if (cell.color === null) {
             if (pattern) {
               ctx.fillStyle = pattern;
-              ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+              ctx.fillRect(cell.x * displayCellSize, cell.y * displayCellSize, displayCellSize, displayCellSize);
             }
           } else {
             ctx.fillStyle = cell.color;
-            ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+            ctx.fillRect(cell.x * displayCellSize, cell.y * displayCellSize, displayCellSize, displayCellSize);
           }
         }
       }
@@ -213,36 +316,53 @@ export function CanvasStage() {
     }
 
     if (showGrid) {
-      ctx.strokeStyle = "rgba(244,244,244,0.16)";
+      ctx.strokeStyle = "rgba(244,244,244,0.10)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let x = 0; x <= sprite.width; x++) {
-        ctx.moveTo(x * zoom + 0.5, 0);
-        ctx.lineTo(x * zoom + 0.5, canvas.height);
+        ctx.moveTo(x * displayCellSize + 0.5, 0);
+        ctx.lineTo(x * displayCellSize + 0.5, canvas.height);
       }
       for (let y = 0; y <= sprite.height; y++) {
-        ctx.moveTo(0, y * zoom + 0.5);
-        ctx.lineTo(canvas.width, y * zoom + 0.5);
+        ctx.moveTo(0, y * displayCellSize + 0.5);
+        ctx.lineTo(canvas.width, y * displayCellSize + 0.5);
       }
       ctx.stroke();
-      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.strokeStyle = "rgba(255,255,255,0.24)";
       ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
     }
-  }, [sprite, project.palette, activeFrameIndex, zoom, onion, showGrid, checker, agentPresence, moveDrag, selection, roomPeers]);
+    if (tiledMode && width > 0 && height > 0) {
+      const tile = ctx.getImageData(0, 0, width, height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let tileY = 0; tileY < 3; tileY++) {
+        for (let tileX = 0; tileX < 3; tileX++) {
+          ctx.putImageData(tile, tileX * width, tileY * height);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }, [sprite, layers, activeLayer, project.palette, project.paletteAlpha, activeFrameIndex, displayCellSize, onion, onionMode, layerVisible, showGrid, tiledMode, width, height, checker, agentPresence, moveDrag, selection, remotePeers]);
 
   function cellFromEvent(e: React.PointerEvent<HTMLCanvasElement>): [number, number] | null {
     const canvas = canvasRef.current;
     if (!canvas || !sprite) return null;
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor(((e.clientX - rect.left) / rect.width) * sprite.width);
-    const y = Math.floor(((e.clientY - rect.top) / rect.height) * sprite.height);
+    const tileOffsetX = tiledMode ? width : 0;
+    const tileOffsetY = tiledMode ? height : 0;
+    const x = Math.floor(((e.clientX - rect.left - tileOffsetX) / width) * sprite.width);
+    const y = Math.floor(((e.clientY - rect.top - tileOffsetY) / height) * sprite.height);
     if (x < 0 || y < 0 || x >= sprite.width || y >= sprite.height) return null;
     return [x, y];
   }
 
   function selectionForView() {
     if (!sprite || !selection) return null;
-    if (selection.spriteId !== sprite.id || selection.frameIndex !== activeFrameIndex) return null;
+    if (
+      selection.spriteId !== sprite.id ||
+      (selection.layerId !== undefined && selection.layerId !== activeLayer?.id) ||
+      selection.frameIndex !== activeFrameIndex
+    ) return null;
     return selection;
   }
 
@@ -266,6 +386,7 @@ export function CanvasStage() {
     const y = Math.min(m.y0, m.y1);
     setSelection({
       spriteId: sprite.id,
+      layerId: activeLayer?.id,
       frameIndex: activeFrameIndex,
       x,
       y,
@@ -286,8 +407,9 @@ export function CanvasStage() {
   }
 
   function applyAt(cell: [number, number], erase: boolean) {
-    if (!sprite) return;
-    const frame = sprite.frames[useStore.getState().activeFrameIndex];
+    if (!sprite || layerLocked) return;
+    const currentLayer = spriteLayers(sprite).find((entry) => entry.id === useEditor.getState().activeLayerId) ?? spriteLayers(sprite)[0];
+    const frame = currentLayer?.frames[useStore.getState().activeFrameIndex];
     const [x, y] = cell;
     if (tool === "picker" && !erase) {
       const p = frame?.pixels[y * sprite.width + x];
@@ -295,11 +417,17 @@ export function CanvasStage() {
       return;
     }
     if (tool === "fill" && !erase) {
-      floodFillAt(x, y, colorIdx);
+      floodFillAt(x, y, colorIdx, undefined, undefined, currentLayer?.id);
       return;
     }
-    const idx = tool === "eraser" || erase ? TRANSPARENT : colorIdx;
-    setColorAt(x, y, idx);
+    if (!erase && brushMode === "checker" && (x + y) % 2 !== 0) return;
+    if (!erase && brushMode === "dots" && (x % 2 !== 0 || y % 2 !== 0)) return;
+    const idx = tool === "eraser" || erase
+      ? TRANSPARENT
+      : shadingMode
+        ? shadingIndex(frame, useStore.getState().project.palette, sprite.width, x, y, colorIdx)
+        : colorIdx;
+    setColorAt(x, y, idx, currentLayer?.id);
   }
 
   if (!sprite)
@@ -313,20 +441,28 @@ export function CanvasStage() {
         </div>
         <span className="stage-size">{sprite.width} × {sprite.height} px</span>
       </div>
-      <div className="stage-canvas-wrap">
-        <canvas
+      <div className="stage-canvas-scroll">
+        <div
+          className="stage-canvas-wrap"
+          style={{ width: `${canvasWidth + 6}px`, height: `${canvasHeight + 6}px` }}
+        >
+          <canvas
           ref={canvasRef}
-          width={width}
-          height={height}
+            width={canvasWidth}
+            height={canvasHeight}
           className="stage-canvas"
           aria-label={`${sprite.name} pixel canvas`}
           style={{
             imageRendering: "pixelated",
-            cursor:
-              tool === "picker" ? "crosshair" : tool === "fill" ? "cell" : "crosshair",
+            width: `${canvasWidth}px`,
+            height: `${canvasHeight}px`,
+            cursor: layerLocked
+              ? "not-allowed"
+              : tool === "picker" ? "crosshair" : tool === "fill" ? "cell" : "crosshair",
           }}
           onContextMenu={(e) => e.preventDefault()}
           onPointerDown={(e) => {
+            if (layerLocked) return;
             e.currentTarget.setPointerCapture(e.pointerId);
             const cell = cellFromEvent(e);
             if (!cell) return;
@@ -355,6 +491,7 @@ export function CanvasStage() {
           onPointerMove={(e) => {
             const cell = cellFromEvent(e);
             useEditor.getState().setHover(cell ? { x: cell[0], y: cell[1] } : null);
+            if (layerLocked) return;
             if (!dragging.current || !cell) return;
             if (e.buttons === 0) {
               dragging.current = false;
@@ -374,7 +511,17 @@ export function CanvasStage() {
               (lastCell.current[0] !== cell[0] || lastCell.current[1] !== cell[1])
             ) {
               const idx = tool === "eraser" || erase ? TRANSPARENT : colorIdx;
-              drawLine(lastCell.current, cell, idx);
+              const lineColor = shadingMode && idx !== TRANSPARENT
+                ? shadingIndex(
+                    activeLayer?.frames[activeFrameIndex],
+                    useStore.getState().project.palette,
+                    sprite.width,
+                    cell[0],
+                    cell[1],
+                    idx,
+                  )
+                : idx;
+              drawLine(lastCell.current, cell, lineColor, activeLayer?.id, pixelPerfect, brushMode);
             }
             lastCell.current = cell;
           }}
@@ -399,19 +546,19 @@ export function CanvasStage() {
             useStore.getState().endStroke();
           }}
           onPointerLeave={() => useEditor.getState().setHover(null)}
-        />
-        <div
+          />
+          <div
           className="canvas-agent-overlay"
           aria-hidden="true"
           style={{
-            left: `${canvasBox.left}px`,
-            top: `${canvasBox.top}px`,
-            width: `${canvasBox.width}px`,
-            height: `${canvasBox.height}px`,
+            left: `${canvasBox.left + (tiledMode ? width : 0)}px`,
+            top: `${canvasBox.top + (tiledMode ? height : 0)}px`,
+            width: `${tiledMode ? width : canvasBox.width}px`,
+            height: `${tiledMode ? height : canvasBox.height}px`,
             ["--cell-width" as string]: `${100 / sprite.width}%`,
             ["--cell-height" as string]: `${100 / sprite.height}%`,
           }}
-        >
+          >
           {agentPresence && agentPresence.spriteId === sprite.id && agentPresence.frameIndex === activeFrameIndex && (
             <AgentCursor presence={agentPresence} sprite={sprite} />
           )}
@@ -442,26 +589,48 @@ export function CanvasStage() {
               <div className="selection-outline" style={rectStyle({ ...s, x: s.x + dx, y: s.y + dy })} />
             );
           })()}
+          </div>
         </div>
       </div>
       <div className="stage-footer">
         <span className="stage-frame-readout">
-          Frame <strong>{Math.min(activeFrameIndex + 1, sprite.frames.length)}</strong> / {sprite.frames.length}
+          Frame <strong>{Math.min(activeFrameIndex + 1, activeLayer?.frames.length ?? 0)}</strong> / {activeLayer?.frames.length ?? 0}
         </span>
-        <span className="stage-hint">{showGrid ? "Grid on" : "Grid off"} · {fps} fps</span>
+        <span className="stage-hint">
+          {showGrid ? "Grid on" : "Grid off"} · {fps} fps
+        </span>
+        <div className="stage-zoom-control" aria-label="Canvas zoom">
+          <button
+            className="zoom-step"
+            onClick={() => setZoom(zoom - 1)}
+            title="Zoom out"
+            aria-label="Zoom out"
+          >
+            −
+          </button>
+          <span>{displayCellSize}px</span>
+          <button
+            className="zoom-step"
+            onClick={() => setZoom(zoom + 1)}
+            title="Zoom in"
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+        </div>
         <div className="stage-actions">
           <button
             className={onion ? "hud-btn active" : "hud-btn"}
-            disabled={sprite.frames.length < 2}
+            disabled={(activeLayer?.frames.length ?? 0) < 2}
             onClick={() => useEditor.getState().toggleOnion()}
-            title={sprite.frames.length < 2 ? "Add another frame to use onion skin" : "Toggle onion skin"}
+            title={(activeLayer?.frames.length ?? 0) < 2 ? "Add another frame to use onion skin" : "Toggle onion skin"}
             aria-pressed={onion}
           >
             Onion
           </button>
           <button
             className={playing ? "hud-btn active" : "hud-btn"}
-            disabled={sprite.frames.length < 2}
+            disabled={(activeLayer?.frames.length ?? 0) < 2}
             onClick={() => setPlaying(!playing)}
             title="Preview animation"
           >

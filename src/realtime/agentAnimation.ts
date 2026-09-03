@@ -14,6 +14,11 @@ export interface AgentActionOptions {
   status?: PresenceStatus;
 }
 
+export interface AgentAnimationOptions {
+  /** Apply each visible step to the real project before showing it. */
+  onChunk?: (chunk: AgentPaintCell[]) => void;
+}
+
 function actionId(): string {
   return `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -56,29 +61,32 @@ export function beginAgentAction(options: AgentActionOptions): string {
   return id;
 }
 
-export async function animateAgentPixels(actionId: string, cells: AgentPaintCell[]): Promise<void> {
+export async function animateAgentPixels(
+  actionId: string,
+  cells: AgentPaintCell[],
+  options: AgentAnimationOptions = {},
+): Promise<void> {
   const ui = useUi.getState();
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  // Paint in ~160 steps so watchers see strokes land near one pixel at a
-  // time (small paints go literally pixel by pixel); the growing preview is
-  // streamed to the room with presence, so peers watch it happen live.
-  const chunkSize = reducedMotion
-    ? Math.max(1, cells.length)
-    : Math.max(1, Math.ceil(cells.length / 160));
-  const delay = reducedMotion ? 0 : 20;
+  // A normal set_pixels call is a sequence of actual one-cell edits. Keep a
+  // deliberate ~90ms rhythm so the page and room presence can show each cell;
+  // reduced-motion users still get one immediate batch.
+  const chunkSize = reducedMotion ? Math.max(1, cells.length) : 1;
+  const delay = reducedMotion ? 0 : 76;
   const preview: AgentPreviewPixel[] = [];
 
   for (let index = 0; index < cells.length; index += chunkSize) {
     const chunk = cells.slice(index, index + chunkSize);
     preview.push(...chunk);
     const cursor = chunk[chunk.length - 1];
+    options.onChunk?.(chunk);
     ui.updateAgentAction(actionId, {
       cursor: cursor ? { x: cursor.x, y: cursor.y } : null,
       progress: cells.length ? Math.min(1, (index + chunk.length) / cells.length) : 1,
       preview: [...preview],
     });
     await nextFrame();
-    if (delay > 0) await wait(delay);
+    if (delay > 0 && index + chunk.length < cells.length) await wait(delay);
   }
 }
 

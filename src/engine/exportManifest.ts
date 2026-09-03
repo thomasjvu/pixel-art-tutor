@@ -1,4 +1,4 @@
-import type { Project, Sprite } from "../types";
+import { spriteLayers, type Project, type Sprite } from "../types";
 import { spriteFileStem } from "./exportImage";
 
 export interface GamePackSpriteFile {
@@ -73,6 +73,15 @@ export function buildGamePackManifest(project: Project, fps: number): string {
           index,
           name: `${stem}-frame-${index + 1}`,
           rect: { x: index * sprite.width, y: 0, width: sprite.width, height: sprite.height },
+        })),
+        tags: sprite.frameTags ?? [],
+        layers: spriteLayers(sprite).map((layer) => ({
+          id: layer.id,
+          name: layer.name,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          blendMode: layer.blendMode,
+          frames: layer.frames.map((frame, index) => ({ id: frame.id, index, linked: Boolean(frame.linkId) })),
         })),
       })),
       tilemap,

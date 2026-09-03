@@ -8,6 +8,10 @@
       {
         "name": "PixelRoom",
         "class_name": "PixelRoom"
+      },
+      {
+        "name": "RoomDirectory",
+        "class_name": "RoomDirectory"
       }
     ]
   },
@@ -15,6 +19,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["PixelRoom"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["RoomDirectory"]
     }
   ]
 }

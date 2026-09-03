@@ -25,6 +25,14 @@ export function Toolbar() {
   const setShowGrid = useEditor((s) => s.setShowGrid);
   const onion = useEditor((s) => s.onion);
   const toggleOnion = useEditor((s) => s.toggleOnion);
+  const pixelPerfect = useEditor((s) => s.pixelPerfect);
+  const setPixelPerfect = useEditor((s) => s.setPixelPerfect);
+  const shadingMode = useEditor((s) => s.shadingMode);
+  const setShadingMode = useEditor((s) => s.setShadingMode);
+  const tiledMode = useEditor((s) => s.tiledMode);
+  const setTiledMode = useEditor((s) => s.setTiledMode);
+  const brushMode = useEditor((s) => s.brushMode);
+  const setBrushMode = useEditor((s) => s.setBrushMode);
   const palette = useStore((s) => s.project.palette);
   const onionAvailable = useStore((s) => (s.activeSprite()?.frames.length ?? 0) > 1);
   const past = useStore((s) => s.past.length);
@@ -51,7 +59,7 @@ export function Toolbar() {
           title="Hide toolbar"
           aria-label="Hide toolbar"
         >
-          «
+          <Icon icon="mingcute:back-2" />
         </button>
       </span>
       <div className="tool-grid">
@@ -101,6 +109,42 @@ export function Toolbar() {
           <Icon icon="mingcute:layers" />
           <span>Onion</span>
         </button>
+        <button
+          className={pixelPerfect ? "tool-toggle active" : "tool-toggle"}
+          onClick={() => setPixelPerfect(!pixelPerfect)}
+          title="Use pixel-perfect connected strokes"
+          aria-pressed={pixelPerfect}
+        >
+          <Icon icon="mingcute:magic-2" />
+          <span>Pixel perfect</span>
+        </button>
+        <button
+          className={shadingMode ? "tool-toggle active" : "tool-toggle"}
+          onClick={() => setShadingMode(!shadingMode)}
+          title="Choose a nearby palette shade while painting"
+          aria-pressed={shadingMode}
+        >
+          <Icon icon="mingcute:sun" />
+          <span>Shading ink</span>
+        </button>
+        <button
+          className={tiledMode ? "tool-toggle active" : "tool-toggle"}
+          onClick={() => setTiledMode(!tiledMode)}
+          title="Preview the canvas as a repeating tile"
+          aria-pressed={tiledMode}
+        >
+          <Icon icon="mingcute:grid-2" />
+          <span>Tiled</span>
+        </button>
+        <button
+          className={brushMode !== "solid" ? "tool-toggle active" : "tool-toggle"}
+          onClick={() => setBrushMode(brushMode === "solid" ? "checker" : "solid")}
+          title="Use a checker dither brush for pixel shading"
+          aria-pressed={brushMode !== "solid"}
+        >
+          <Icon icon="mingcute:magic-2" />
+          <span>{brushMode === "dots" ? "Dot brush" : "Dither brush"}</span>
+        </button>
       </div>
 
       <button
@@ -130,11 +174,12 @@ export function Toolbar() {
       <div className="toolbar-spacer" />
 
       <div className="zoom-control">
-        <button className="zoom-button" onClick={() => setZoom(zoom - 4)} title="Zoom out">
+        <span className="zoom-label">Zoom</span>
+        <button className="zoom-button" onClick={() => setZoom(zoom - 1)} title="Zoom out" aria-label="Zoom out">
           −
         </button>
         <span>{zoom}px</span>
-        <button className="zoom-button" onClick={() => setZoom(zoom + 4)} title="Zoom in">
+        <button className="zoom-button" onClick={() => setZoom(zoom + 1)} title="Zoom in" aria-label="Zoom in">
           +
         </button>
       </div>

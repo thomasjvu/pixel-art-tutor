@@ -123,7 +123,8 @@ npm run room:dev                                             # http://127.0.0.1:
 VITE_PARTY_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1
 ```
 
-Open the Vite URL, choose **Room**, create a room, and share its URL. The server stores the latest
+Open the Vite URL, choose **Room**, create a room, and share its URL. The Room panel also shows an
+**Active rooms** list for one-click joining of rooms that currently have collaborators. The server stores the latest
 project snapshot and recent edit history, broadcasts presence over WebSockets, merges non-conflicting
 pixel edits, and only allows a collaborator to undo their latest room operation. Deploy the room
 worker with `npm run room:deploy`, then set `VITE_PARTY_HOST` to its HTTPS host for production.
@@ -164,6 +165,8 @@ React 19 · Vite · TypeScript · zustand · PartySocket · PartyServer · Cloud
 Local projects are persisted to `localStorage`; shared rooms persist their canonical snapshot and
 recent history in the room server. Typed against the official
 [`webmcp-types`](https://www.npmjs.com/package/webmcp-types) package.
+Studio UI icons use the locally bundled [Streamline Pixel collection](https://icon-sets.iconify.design/streamline-pixel/)
+from Iconify, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## License
 

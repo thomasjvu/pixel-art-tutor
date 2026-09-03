@@ -2,12 +2,14 @@ import { PartySocket } from "partysocket";
 import {
   applyRoomPatch,
   cloneProject,
+  isActiveRoomListing,
   isProject,
   mergeProjectChanges,
   parseRoomMessage,
   projectChangeToRoomPatch,
   ROOM_PROTOCOL_VERSION,
   type ActorKind,
+  type ActiveRoomListing,
   type RoomClientMessage,
   type RoomErrorMessage,
   type RoomOperationSummary,
@@ -99,6 +101,17 @@ function configuredHost(): string | null {
   return import.meta.env.PROD ? window.location.host : null;
 }
 
+function roomDirectoryUrl(host: string): string {
+  const base = /^https?:\/\//i.test(host) ? host : `${window.location.protocol}//${host}`;
+  return new URL("/api/rooms", base).toString();
+}
+
+function parseActiveRooms(value: unknown): ActiveRoomListing[] {
+  if (!value || typeof value !== "object") return [];
+  const rooms = (value as { rooms?: unknown }).rooms;
+  return Array.isArray(rooms) ? rooms.filter(isActiveRoomListing) : [];
+}
+
 function presenceFor(
   id: string,
   name: string,
@@ -145,6 +158,7 @@ export class RoomClient {
   private inFlightOperation: InFlightOperation | null = null;
   private resyncRequired = false;
   private snapshotRequestOutstanding = false;
+  private roomDirectoryAbort: AbortController | null = null;
   private lastLocalOperationId: string | null = null;
   private lastUndoOperationId: string | null = null;
   private readonly id = clientId();
@@ -197,6 +211,8 @@ export class RoomClient {
     this.inFlightOperation = null;
     this.resyncRequired = false;
     this.snapshotRequestOutstanding = false;
+    this.roomDirectoryAbort?.abort();
+    this.roomDirectoryAbort = null;
     useUi.getState().setRoomPeers([]);
     useUi.getState().setRoomHistory(false, false);
     useUi.getState().setRoomConnection({
@@ -240,6 +256,39 @@ export class RoomClient {
     const room = randomRoomId();
     this.joinRoom(room);
     return room;
+  }
+
+  async refreshRooms(): Promise<void> {
+    const host = configuredHost();
+    this.roomDirectoryAbort?.abort();
+    if (!host) {
+      useUi.getState().setActiveRooms([], "unavailable", "Set VITE_PARTY_HOST to browse active rooms.");
+      return;
+    }
+    const controller = new AbortController();
+    this.roomDirectoryAbort = controller;
+    const currentRooms = useUi.getState().activeRooms;
+    useUi.getState().setActiveRooms(currentRooms, "loading", null);
+    try {
+      const response = await fetch(roomDirectoryUrl(host), {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Room directory returned HTTP ${response.status}.`);
+      const rooms = parseActiveRooms(await response.json());
+      if (!controller.signal.aborted) useUi.getState().setActiveRooms(rooms, "ready", null);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const message = error instanceof Error ? error.message : "Could not load active rooms.";
+      useUi.getState().setActiveRooms(useUi.getState().activeRooms, "error", message);
+    } finally {
+      if (this.roomDirectoryAbort === controller) this.roomDirectoryAbort = null;
+    }
+  }
+
+  cancelRoomDirectoryRefresh(): void {
+    this.roomDirectoryAbort?.abort();
+    this.roomDirectoryAbort = null;
   }
 
   shareUrl(): string {

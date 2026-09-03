@@ -119,8 +119,8 @@ export function SpritesPanel() {
           </button>
         </div>
         <p className="hint webmcp-note">
-          ⚡ This form is also a WebMCP tool (<code>request_new_sprite</code>): an agent can prefill
-          it for you — you keep the final click.
+          <Icon icon="mingcute:bot" />
+          <span>Agent can fill this in; you keep the final click.</span>
         </p>
       </form>
 
@@ -276,7 +276,6 @@ function SpriteRow({
     <div className={active ? "sprite-row active" : "sprite-row"}>
       <button className="sprite-select" onClick={onSelect} title={`Edit ${sprite.name}`}>
         <SpriteThumb sprite={sprite} palette={palette} size={36} />
-        <span className="sprite-label">{sprite.name}</span>
         <span className={"badge kind-" + sprite.kind}>{sprite.kind}</span>
       </button>
       <input

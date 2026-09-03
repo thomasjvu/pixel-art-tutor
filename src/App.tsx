@@ -10,6 +10,7 @@ import { AgentPanel } from "./components/AgentPanel";
 import { CritiquePanel } from "./components/CritiquePanel";
 import { TimelinePanel } from "./components/TimelinePanel";
 import { ProjectMenu } from "./components/ProjectMenu";
+import { ProjectTabs } from "./components/ProjectTabs";
 import { StatusBar } from "./components/StatusBar";
 import { RoomBridge } from "./components/RoomBridge";
 import { RoomPanel } from "./components/RoomPanel";
@@ -22,13 +23,15 @@ import { useUi } from "./store/uiStore";
 import { useEditor } from "./store/editorStore";
 import { useStore } from "./store/projectStore";
 import { redoProject, undoProject } from "./realtime/roomClient";
+import { createBlankProjectTab } from "./store/workspaceActions";
+import { spriteLayers } from "./types";
 
 type Tab = "sprites" | "palette" | "frames" | "map" | "critique" | "agent" | "room";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "sprites", label: "Sprites", icon: "mingcute:picture" },
-  { id: "palette", label: "Palette", icon: "mingcute:palette" },
-  { id: "frames", label: "Cels", icon: "mingcute:movie" },
+  { id: "palette", label: "Colors", icon: "mingcute:palette" },
+  { id: "frames", label: "Frames", icon: "mingcute:movie" },
   { id: "map", label: "Map", icon: "mingcute:map" },
   { id: "critique", label: "Tutor", icon: "mingcute:bulb" },
   { id: "agent", label: "Agent", icon: "mingcute:bot" },
@@ -90,7 +93,7 @@ function AppContent() {
       }
       if (command && key === "n") {
         event.preventDefault();
-        useStore.getState().resetProject("blank");
+        createBlankProjectTab();
         return;
       }
       if (command && key === "z") {
@@ -121,18 +124,18 @@ function AppContent() {
         case "delete":
         case "backspace": {
           const sel = editor.selection;
-          if (sel) {
+          if (sel && !editor.layerLocked) {
             event.preventDefault();
-            useStore.getState().fillRegion(sel.x, sel.y, sel.width, sel.height, null, sel.spriteId, sel.frameIndex, false);
+            useStore.getState().fillRegion(sel.x, sel.y, sel.width, sel.height, null, sel.spriteId, sel.frameIndex, false, sel.layerId);
           }
           return;
         }
         case "arrowleft":
         case "arrowright":
         case "arrowup":
-        case "arrowdown": {
-          const sel = editor.tool === "select" ? editor.selection : null;
-          if (sel) {
+          case "arrowdown": {
+            const sel = editor.tool === "select" ? editor.selection : null;
+          if (sel && !editor.layerLocked) {
             event.preventDefault();
             const step = event.shiftKey ? 8 : 1;
             const dx = key === "arrowleft" ? -step : key === "arrowright" ? step : 0;
@@ -155,13 +158,14 @@ function AppContent() {
           if (key === "arrowright") {
             const state = useStore.getState();
             const sprite = state.activeSprite();
-            if (sprite) state.selectFrame(Math.min(sprite.frames.length - 1, state.activeFrameIndex + 1));
+            const layer = sprite ? spriteLayers(sprite).find((entry) => entry.id === editor.activeLayerId) ?? spriteLayers(sprite)[0] : null;
+            if (layer) state.selectFrame(Math.min(layer.frames.length - 1, state.activeFrameIndex + 1));
           }
           break;
         }
         case "+":
-        case "=": editor.setZoom(editor.zoom + 4); break;
-        case "-": editor.setZoom(editor.zoom - 4); break;
+        case "=": editor.setZoom(editor.zoom + 1); break;
+        case "-": editor.setZoom(editor.zoom - 1); break;
       }
     }
     window.addEventListener("keydown", onKey);
@@ -185,12 +189,12 @@ function AppContent() {
         </div>
         <div className="brand-mark" aria-hidden="true">
           <svg width="28" height="28" viewBox="0 0 8 8" shapeRendering="crispEdges">
-            <rect width="8" height="8" fill="#20233b" />
-            <rect x="1" y="1" width="2" height="2" fill="#ff8fab" />
-            <rect x="5" y="1" width="2" height="2" fill="#ffd166" />
-            <rect x="3" y="3" width="2" height="2" fill="#79d6c0" />
-            <rect x="1" y="5" width="2" height="2" fill="#6ea8fe" />
-            <rect x="5" y="5" width="2" height="2" fill="#fff4dc" />
+            <rect width="8" height="8" fill="#000" />
+            <rect x="1" y="1" width="2" height="2" fill="#ff2e2e" />
+            <rect x="5" y="1" width="2" height="2" fill="#ffee00" />
+            <rect x="3" y="3" width="2" height="2" fill="#fff" />
+            <rect x="1" y="5" width="2" height="2" fill="#fff" />
+            <rect x="5" y="5" width="2" height="2" fill="#ff2e2e" />
           </svg>
         </div>
         <div className="brand-copy">
@@ -215,20 +219,22 @@ function AppContent() {
             }}
             aria-label="Project name"
           />
-          <span className="project-subtitle">{spriteCount} sprites · local workspace</span>
+          <span className="project-subtitle">
+            {spriteCount} sprite{spriteCount === 1 ? "" : "s"}
+          </span>
         </div>
         <div className="header-spacer" />
         <div className="header-status">
           <span className={`status-light ${mcpStatus === "ready" ? "ready" : ""}`} />
-          <span>{mcpStatus === "ready" ? "AGENT ONLINE" : "LOCAL MODE"}</span>
+          <span>{mcpStatus === "ready" ? "Agent ready" : "Local mode"}</span>
           <span className="header-status-divider" />
           <span className={`status-light room-light ${roomStatus === "connected" ? "ready" : ""}`} />
           <span>
             {roomStatus === "connected"
-              ? `${roomPeers + 1} IN ROOM`
+              ? `${roomPeers + 1} in room`
               : roomStatus === "connecting"
-                ? "JOINING ROOM"
-                : "SOLO STUDIO"}
+                ? "Joining room"
+                : "Solo studio"}
           </span>
         </div>
         <button
@@ -242,6 +248,7 @@ function AppContent() {
       </header>
 
       <ProjectMenu />
+      <ProjectTabs />
 
       <main className="workspace">
         {!toolbarOpen ? (
@@ -251,7 +258,7 @@ function AppContent() {
             title="Show tools"
             aria-label="Show tools"
           >
-            »
+            <Icon icon="mingcute:forward-2" />
           </button>
         ) : (
           <Toolbar />
@@ -272,7 +279,7 @@ function AppContent() {
               title="Hide inspector"
               aria-label="Hide inspector"
             >
-              »
+              <Icon icon="mingcute:forward-2" />
             </button>
             <span className="dock-grip" aria-hidden="true"><Icon icon="mingcute:more-2" /></span>
           </div>

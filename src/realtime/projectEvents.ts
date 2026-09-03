@@ -4,6 +4,7 @@ export type ProjectChangeSource = "local" | "remote" | "undo" | "redo";
 
 export interface ProjectPixelHint {
   spriteId: string;
+  layerId?: string;
   frameIndex: number;
   x: number;
   y: number;
@@ -40,7 +41,7 @@ export function mergeProjectChangeHints(
     if (hint.kind === "cells") {
       for (const pixel of hint.pixels) {
         pixels.set(
-          JSON.stringify([pixel.spriteId, pixel.frameIndex, pixel.x, pixel.y]),
+          JSON.stringify([pixel.spriteId, pixel.layerId ?? "", pixel.frameIndex, pixel.x, pixel.y]),
           pixel,
         );
       }

@@ -5,9 +5,12 @@ import { useStore } from "../store/projectStore";
 import { useUi } from "../store/uiStore";
 import { redoProject, undoProject } from "../realtime/roomClient";
 import {
+  downloadBlob,
   downloadCanvas,
   downloadText,
+  encodeAnimatedGif,
   godotSpriteFrames,
+  renderTextureAtlas,
   renderSpriteToCanvas,
   spriteFileStem,
   unitySpriteManifest,
@@ -15,6 +18,8 @@ import {
 } from "../engine/exportImage";
 import { buildGamePackManifest, gamePackSpriteFiles } from "../engine/exportManifest";
 import { MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
+import { createBlankProjectTab } from "../store/workspaceActions";
+import { spriteLayers } from "../types";
 
 function closeMenu(target: HTMLElement) {
   target.closest("details")?.removeAttribute("open");
@@ -39,6 +44,7 @@ export function ProjectMenu() {
   const onion = useEditor((s) => s.onion);
   const toggleOnion = useEditor((s) => s.toggleOnion);
   const onionAvailable = useStore((s) => (s.activeSprite()?.frames.length ?? 0) > 1);
+  const playbackTagId = useEditor((s) => s.playbackTagId);
   const storageHint =
     storageStatus === "saved"
       ? "Autosaved locally"
@@ -68,8 +74,73 @@ export function ProjectMenu() {
       allFrames,
       scale: 1,
       palette: state.project.palette,
+      paletteAlpha: state.project.paletteAlpha,
     });
     downloadCanvas(canvas, `${stem}${allFrames ? "-sheet" : ""}.png`);
+  }
+
+  function exportPngSequence() {
+    const state = useStore.getState();
+    const sprite = state.activeSprite();
+    if (!sprite) return;
+    const stem = spriteFileStem(sprite.name);
+    const count = Math.max(1, ...spriteLayers(sprite).map((layer) => layer.frames.length));
+    for (let index = 0; index < count; index++) {
+      downloadCanvas(
+        renderSpriteToCanvas(sprite, {
+          frameIndex: index,
+          scale: 1,
+          palette: state.project.palette,
+          paletteAlpha: state.project.paletteAlpha,
+        }),
+        `${stem}-${String(index + 1).padStart(2, "0")}.png`,
+      );
+    }
+  }
+
+  function exportAnimatedGif() {
+    const state = useStore.getState();
+    const sprite = state.activeSprite();
+    if (!sprite) return;
+    const tag = sprite.frameTags?.find((entry) => entry.id === playbackTagId);
+    const frameIndices = tag
+      ? Array.from({ length: tag.to - tag.from + 1 }, (_, index) => tag.from + index)
+      : undefined;
+    downloadBlob(
+      encodeAnimatedGif(sprite, {
+        palette: state.project.palette,
+        paletteAlpha: state.project.paletteAlpha,
+        fps: useEditor.getState().fps,
+        frameIndices,
+      }),
+      `${spriteFileStem(sprite.name)}${tag ? `-${spriteFileStem(tag.name)}` : ""}.gif`,
+    );
+  }
+
+  function exportTextureAtlas() {
+    const state = useStore.getState();
+    const atlas = renderTextureAtlas(state.project, {
+      palette: state.project.palette,
+      paletteAlpha: state.project.paletteAlpha,
+    });
+    const stem = spriteFileStem(state.project.name);
+    downloadCanvas(atlas.canvas, `${stem}-atlas.png`);
+    downloadText(
+      JSON.stringify({
+        format: "pixel-art-tutor/texture-atlas",
+        version: 1,
+        image: `${stem}-atlas.png`,
+        fps: useEditor.getState().fps,
+        sprites: state.project.sprites.map((sprite) => ({
+          id: sprite.id,
+          name: sprite.name,
+          tags: sprite.frameTags ?? [],
+          frames: atlas.entries.filter((entry) => entry.spriteId === sprite.id),
+        })),
+        size: { width: atlas.canvas.width, height: atlas.canvas.height },
+      }, null, 2),
+      `${stem}-atlas.json`,
+    );
   }
 
   function exportGodot() {
@@ -114,6 +185,7 @@ export function ProjectMenu() {
           allFrames: true,
           scale: 1,
           palette: state.project.palette,
+          paletteAlpha: state.project.paletteAlpha,
         }),
         `${stem}-sheet.png`,
       );
@@ -144,52 +216,73 @@ export function ProjectMenu() {
       .catch(() => window.alert("That project file could not be opened."));
   }
 
-  function onImageImport(file: File | undefined) {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      try {
-        const scale = Math.min(1, 64 / image.naturalWidth, 64 / image.naturalHeight);
-        const width = Math.max(1, Math.round(image.naturalWidth * scale));
-        const height = Math.max(1, Math.round(image.naturalHeight * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d");
-        if (!context) return;
-        context.imageSmoothingEnabled = false;
-        context.drawImage(image, 0, 0, width, height);
-        const data = context.getImageData(0, 0, width, height).data;
-        const pixels: Array<string | null> = [];
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i + 3] < 16) {
-            pixels.push(null);
-            continue;
+  function readRasterFrame(
+    file: File,
+    width?: number,
+    height?: number,
+  ): Promise<{ width: number; height: number; pixels: Array<string | null> }> {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const scale = Math.min(1, 64 / image.naturalWidth, 64 / image.naturalHeight);
+          const targetWidth = width ?? Math.max(1, Math.round(image.naturalWidth * scale));
+          const targetHeight = height ?? Math.max(1, Math.round(image.naturalHeight * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          const context = canvas.getContext("2d");
+          if (!context) {
+            reject(new Error("canvas unavailable"));
+            return;
           }
-          pixels.push(
-            `#${data[i].toString(16).padStart(2, "0")}${data[i + 1]
-              .toString(16)
-              .padStart(2, "0")}${data[i + 2].toString(16).padStart(2, "0")}`,
-          );
+          context.imageSmoothingEnabled = false;
+          context.clearRect(0, 0, targetWidth, targetHeight);
+          context.drawImage(image, 0, 0, targetWidth, targetHeight);
+          const data = context.getImageData(0, 0, targetWidth, targetHeight).data;
+          const pixels: Array<string | null> = [];
+          for (let index = 0; index < data.length; index += 4) {
+            if (data[index + 3]! < 16) {
+              pixels.push(null);
+              continue;
+            }
+            pixels.push(
+              `#${data[index]!.toString(16).padStart(2, "0")}${data[index + 1]!.toString(16).padStart(2, "0")}${data[index + 2]!.toString(16).padStart(2, "0")}`,
+            );
+          }
+          resolve({ width: targetWidth, height: targetHeight, pixels });
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("image could not be imported"));
+      };
+      image.src = url;
+    });
+  }
+
+  function onImageImport(files: File[] | undefined) {
+    if (!files?.length) return;
+    const first = files[0]!;
+    readRasterFrame(first)
+      .then(async (base) => {
+        const frames = [base.pixels];
+        for (const file of files.slice(1)) {
+          frames.push((await readRasterFrame(file, base.width, base.height)).pixels);
         }
         const importedId = useStore.getState().importRasterSprite({
-          name: imageName(file.name),
-          width,
-          height,
-          frames: [pixels],
-          kind: "item",
+          name: imageName(first.name),
+          width: base.width,
+          height: base.height,
+          frames,
+          kind: files.length > 1 ? "character" : "item",
         });
         if (!importedId) window.alert("Could not import image: project capacity reached.");
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      window.alert("That image could not be imported.");
-    };
-    image.src = url;
+      })
+      .catch(() => window.alert("That image could not be imported."));
   }
 
   return (
@@ -220,7 +313,7 @@ export function ProjectMenu() {
             <button
               className="menu-item"
               onClick={(event) => {
-                resetProject("blank");
+                createBlankProjectTab();
                 closeMenu(event.currentTarget);
               }}
             >
@@ -245,14 +338,15 @@ export function ProjectMenu() {
             </label>
             <label className="menu-item">
               <Icon icon="mingcute:image-2" />
-              <span>Import PNG as sprite…</span>
+              <span>Import PNG / sequence…</span>
               <input
                 ref={imageFileRef}
                 type="file"
+                multiple
                 accept="image/png,image/webp,image/jpeg"
                 hidden
                 onChange={(event) => {
-                  onImageImport(event.target.files?.[0]);
+                  onImageImport(event.target.files ? Array.from(event.target.files) : undefined);
                   event.target.value = "";
                 }}
               />
@@ -350,7 +444,22 @@ export function ProjectMenu() {
               <span>Horizontal sprite sheet</span>
               <span className="file-kind">PNG</span>
             </button>
+            <button className="menu-item" onClick={exportPngSequence}>
+              <Icon icon="mingcute:gallery" />
+              <span>PNG frame sequence</span>
+              <span className="file-kind">PNGs</span>
+            </button>
+            <button className="menu-item" onClick={exportAnimatedGif}>
+              <Icon icon="mingcute:movie" />
+              <span>Animated GIF</span>
+              <span className="file-kind">GIF</span>
+            </button>
             <div className="menu-divider" />
+            <button className="menu-item" onClick={exportTextureAtlas}>
+              <Icon icon="mingcute:box-3" />
+              <span>Texture atlas</span>
+              <span className="file-kind">PNG + JSON</span>
+            </button>
             <button className="menu-item" onClick={exportGodot}>
               <Icon icon="mingcute:game-2" />
               <span>Godot pack</span>

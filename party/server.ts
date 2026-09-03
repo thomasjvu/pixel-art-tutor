@@ -3,10 +3,12 @@ import type { Connection, WSMessage } from "partyserver";
 import {
   applyRoomPatch,
   cloneProject,
+  isActiveRoomListing,
   isRoomPatch,
   isProject,
   ROOM_PROTOCOL_VERSION,
   type ActorKind,
+  type ActiveRoomListing,
   type RoomErrorScope,
   type RoomOperationSummary,
   type RoomPatch,
@@ -22,6 +24,10 @@ const MAX_CONNECTIONS_PER_ROOM = 16;
 const RATE_WINDOW_MS = 10_000;
 const MAX_OPERATIONS_PER_WINDOW = 30;
 const MAX_PRESENCE_PER_WINDOW = 120;
+const ROOM_DIRECTORY_NAME = "active-rooms";
+const ROOM_DIRECTORY_STORAGE_KEY = "active-rooms-v1";
+const ACTIVE_ROOM_TTL_MS = 75_000;
+const DIRECTORY_REFRESH_MS = 25_000;
 
 interface StoredOperation extends RoomOperationSummary {
   seq: number;
@@ -57,6 +63,7 @@ interface RoomErrorOptions {
 
 interface RoomEnv {
   PixelRoom: DurableObjectNamespace<PixelRoom>;
+  RoomDirectory: DurableObjectNamespace;
   ROOM_ALLOWED_ORIGIN?: string;
 }
 
@@ -266,8 +273,9 @@ export class PixelRoom extends Server<RoomEnv> {
     } satisfies ConnectionState);
   }
 
-  onClose(): void {
+  async onClose(): Promise<void> {
     this.broadcastPresence();
+    await this.syncDirectory();
   }
 
   async onMessage(connection: Connection, rawMessage: WSMessage): Promise<void> {
@@ -369,6 +377,7 @@ export class PixelRoom extends Server<RoomEnv> {
     }
     this.sendWelcome(connection);
     this.broadcastPresence();
+    void this.syncDirectory();
   }
 
   private handleSnapshotRequest(connection: Connection, message: Record<string, unknown>): void {
@@ -603,6 +612,44 @@ export class PixelRoom extends Server<RoomEnv> {
       return;
     }
     this.sendOperation(entry, patch);
+    void this.syncDirectory();
+  }
+
+  async onAlarm(): Promise<void> {
+    await this.syncDirectory();
+  }
+
+  private async syncDirectory(): Promise<void> {
+    const count = this.presences().length;
+    const directory = this.env.RoomDirectory.get(
+      this.env.RoomDirectory.idFromName(ROOM_DIRECTORY_NAME),
+    );
+    const message =
+      count > 0 && this.roomState
+        ? {
+            action: "upsert" as const,
+            room: {
+              roomId: this.name,
+              projectName: text(this.roomState.project.name, "Untitled", 64),
+              participantCount: count,
+              updatedAt: Date.now(),
+            } satisfies ActiveRoomListing,
+          }
+        : { action: "remove" as const, roomId: this.name };
+    try {
+      const response = await directory.fetch("https://pixel-room-directory/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(message),
+      });
+      if (count > 0 && response.ok) {
+        await this.ctx.storage.setAlarm(Date.now() + DIRECTORY_REFRESH_MS);
+      } else if (count === 0) {
+        await this.ctx.storage.deleteAlarm();
+      }
+    } catch {
+      // Room collaboration must continue if the advisory directory is down.
+    }
   }
 
   private sendWelcome(connection: Connection): void {
@@ -684,9 +731,114 @@ export class PixelRoom extends Server<RoomEnv> {
   }
 }
 
+interface StoredRoomListings {
+  [roomId: string]: ActiveRoomListing;
+}
+
+interface RoomDirectoryMessage {
+  action: "upsert" | "remove";
+  room?: ActiveRoomListing;
+  roomId?: string;
+}
+
+function storedRoomListings(value: unknown): StoredRoomListings {
+  if (!value || typeof value !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([roomId, listing]) => roomId === (listing as ActiveRoomListing)?.roomId && isActiveRoomListing(listing),
+    ),
+  );
+}
+
+/**
+ * A tiny single-writer registry for rooms with live connections. It deliberately
+ * stores metadata only: room contents remain inside each PixelRoom object.
+ */
+export class RoomDirectory {
+  constructor(private readonly state: DurableObjectState) {}
+
+  async fetch(request: Request): Promise<Response> {
+    const path = new URL(request.url).pathname;
+    const listings = storedRoomListings(
+      await this.state.storage.get<StoredRoomListings>(ROOM_DIRECTORY_STORAGE_KEY),
+    );
+
+    if (path === "/rooms" && request.method === "GET") {
+      const cutoff = Date.now() - ACTIVE_ROOM_TTL_MS;
+      const active = Object.values(listings)
+        .filter((listing) => listing.updatedAt >= cutoff && listing.participantCount > 0)
+        .sort((a, b) =>
+          b.participantCount - a.participantCount ||
+          a.projectName.localeCompare(b.projectName) ||
+          a.roomId.localeCompare(b.roomId),
+        );
+      const activeById = Object.fromEntries(active.map((listing) => [listing.roomId, listing]));
+      if (Object.keys(activeById).length !== Object.keys(listings).length) {
+        await this.state.storage.put(ROOM_DIRECTORY_STORAGE_KEY, activeById);
+      }
+      return jsonResponse({ rooms: active });
+    }
+
+    if (path === "/sync" && request.method === "POST") {
+      let message: RoomDirectoryMessage;
+      try {
+        message = (await request.json()) as RoomDirectoryMessage;
+      } catch {
+        return jsonResponse({ error: "Invalid room directory message." }, 400);
+      }
+      if (message.action === "upsert" && isActiveRoomListing(message.room)) {
+        listings[message.room.roomId] = message.room;
+        await this.state.storage.put(ROOM_DIRECTORY_STORAGE_KEY, listings);
+        return jsonResponse({ ok: true });
+      }
+      if (
+        message.action === "remove" &&
+        typeof message.roomId === "string" &&
+        message.roomId.length > 0 &&
+        message.roomId.length <= 48
+      ) {
+        delete listings[message.roomId];
+        await this.state.storage.put(ROOM_DIRECTORY_STORAGE_KEY, listings);
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ error: "Invalid room directory message." }, 400);
+    }
+
+    return jsonResponse({ error: "Not found" }, 404);
+  }
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
+}
+
 export default {
   async fetch(request: Request, env: RoomEnv): Promise<Response> {
     const allowedOrigin = env.ROOM_ALLOWED_ORIGIN?.trim() || null;
+    const url = new URL(request.url);
+    if (url.pathname === "/api/rooms") {
+      const originError = originGuard(request, allowedOrigin);
+      if (originError) return originError;
+      const headers = new Headers({
+        "Access-Control-Allow-Origin": allowedOrigin ?? "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+        Vary: "Origin",
+      });
+      if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+      if (request.method !== "GET") return new Response("Method not allowed", { status: 405, headers });
+      const directory = env.RoomDirectory.get(env.RoomDirectory.idFromName(ROOM_DIRECTORY_NAME));
+      const response = await directory.fetch("https://pixel-room-directory/rooms");
+      headers.set("Content-Type", "application/json; charset=utf-8");
+      return new Response(await response.text(), {
+        status: response.status,
+        headers,
+      });
+    }
     const cors = allowedOrigin
       ? {
           "Access-Control-Allow-Origin": allowedOrigin,

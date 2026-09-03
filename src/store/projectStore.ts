@@ -1,6 +1,15 @@
 import { create } from "zustand";
-import type { Frame, PixelChange, Project, Sprite, SpriteKind } from "../types";
-import type { SelectionRect } from "./editorStore";
+import type {
+  BlendMode,
+  Frame,
+  FrameTag,
+  Layer,
+  PixelChange,
+  Project,
+  Sprite,
+  SpriteKind,
+} from "../types";
+import type { BrushMode, SelectionRect } from "./editorStore";
 import { TRANSPARENT } from "../types";
 import { normalizeHex, resolveColorInto } from "../engine/color";
 import {
@@ -12,6 +21,8 @@ import {
   flipV,
   inBounds,
   outline as outlineOp,
+  pixelPerfectLine,
+  rotateNearest,
   rotate90,
   shiftWrap,
 } from "../engine/pixels";
@@ -21,6 +32,7 @@ import { createUniqueId } from "./projectIds";
 import {
   MAX_DIMENSION,
   MAX_FRAMES_PER_SPRITE,
+  MAX_LAYERS_PER_SPRITE,
   MAX_PALETTE_COLORS,
   MAX_PROJECT_JSON_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
@@ -42,6 +54,7 @@ export type TransformOp =
   | "flip_h"
   | "flip_v"
   | "rotate_90"
+  | "rotate"
   | "shift"
   | "outline";
 
@@ -57,32 +70,111 @@ let storedRecoveryRaw: string | null = null;
 export type StorageStatus = "not_saved" | "pending" | "saved" | "unavailable" | "too_large";
 let initialStorageStatus: StorageStatus = "not_saved";
 
+function cloneFrames(frames: Frame[]): Frame[] {
+  return frames.map((frame) => ({
+    id: frame.id,
+    pixels: [...frame.pixels],
+    ...(frame.linkId ? { linkId: frame.linkId } : {}),
+  }));
+}
+
+function frameIndexesForEdit(frames: Frame[], frameIndex: number, allFrames = false): number[] {
+  const indexes = new Set<number>(allFrames ? frames.map((_, index) => index) : [frameIndex]);
+  const linkedIds = new Set(
+    [...indexes]
+      .map((index) => frames[index]?.linkId)
+      .filter((linkId): linkId is string => Boolean(linkId)),
+  );
+  if (linkedIds.size > 0) {
+    frames.forEach((frame, index) => {
+      if (frame.linkId && linkedIds.has(frame.linkId)) indexes.add(index);
+    });
+  }
+  return [...indexes].sort((a, b) => a - b);
+}
+
+function cloneSprite(sprite: Sprite): Sprite {
+  const sourceLayers = sprite.layers?.length
+    ? sprite.layers
+    : [{
+        id: `${sprite.id}-artwork`,
+        name: "Artwork",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal" as const,
+        frames: sprite.frames,
+      }];
+  const layers = sourceLayers.map((layer) => ({
+    ...layer,
+    frames: cloneFrames(layer.frames),
+  }));
+  const firstLayer = layers[0]!;
+  return {
+    ...sprite,
+    frames: firstLayer.frames,
+    layers,
+    frameTags: sprite.frameTags?.map((tag) => ({ ...tag })) ?? [],
+  };
+}
+
 function cloneProject(p: Project): Project {
   return {
     ...p,
     palette: [...p.palette],
-    sprites: p.sprites.map((s) => ({
-      ...s,
-      frames: s.frames.map((f) => ({ id: f.id, pixels: [...f.pixels] })),
-    })),
+    paletteAlpha: p.paletteAlpha ? [...p.paletteAlpha] : undefined,
+    sprites: p.sprites.map(cloneSprite),
     tilemap: p.tilemap ? { ...p.tilemap, cells: [...p.tilemap.cells] } : null,
   };
 }
 
-function cloneProjectFrame(p: Project, spriteId: string, frameIndex: number): Project {
-  return {
-    ...p,
-    sprites: p.sprites.map((sprite) =>
-      sprite.id !== spriteId
-        ? sprite
-        : {
-            ...sprite,
-            frames: sprite.frames.map((frame, index) =>
-              index === frameIndex ? { ...frame, pixels: [...frame.pixels] } : frame,
-            ),
-          },
+function spriteLayer(sprite: Sprite, layerId?: string): Layer | null {
+  const layers = sprite.layers?.length ? sprite.layers : null;
+  if (!layers) {
+    return layerId && layerId !== `${sprite.id}-artwork`
+      ? null
+      : {
+          id: `${sprite.id}-artwork`,
+          name: "Artwork",
+          visible: true,
+          locked: false,
+          opacity: 1,
+          blendMode: "normal",
+          frames: sprite.frames,
+        };
+  }
+  return layers.find((layer) => layer.id === layerId) ?? (layerId ? null : layers[0] ?? null);
+}
+
+function allFrameIds(project: Project): Set<string> {
+  return new Set(
+    project.sprites.flatMap((sprite) =>
+      (sprite.layers?.length ? sprite.layers.flatMap((layer) => layer.frames) : sprite.frames).map(
+        (frame) => frame.id,
+      ),
     ),
-  };
+  );
+}
+
+function allLayerIds(project: Project): Set<string> {
+  return new Set(project.sprites.flatMap((sprite) => (sprite.layers ?? []).map((layer) => layer.id)));
+}
+
+function normalizeTagRange(tag: FrameTag, frameCount: number): FrameTag {
+  const max = Math.max(0, frameCount - 1);
+  const from = Math.max(0, Math.min(max, Math.round(tag.from)));
+  return { ...tag, from, to: Math.max(from, Math.min(max, Math.round(tag.to))) };
+}
+
+function movedFrameIndex(index: number, from: number, to: number): number {
+  if (index === from) return to;
+  if (from < to && index > from && index <= to) return index - 1;
+  if (from > to && index >= to && index < from) return index + 1;
+  return index;
+}
+
+function isBlendMode(value: unknown): value is BlendMode {
+  return value === "normal" || value === "multiply" || value === "screen" || value === "overlay";
 }
 
 function preserveRejectedStoredProject(raw: string): void {
@@ -229,6 +321,7 @@ function readPaletteSlots(): { name: string; savedAt: number; colors: string[] }
 
 export interface ResolveTarget {
   sprite: Sprite;
+  layer: Layer;
   frameIndex: number;
 }
 
@@ -255,29 +348,39 @@ interface ProjectState {
   lastSavedAt: number | null;
 
   activeSprite(): Sprite;
-  resolveTarget(spriteId?: string, frameIndex?: number): ResolveTarget | { error: string };
+  resolveTarget(spriteId?: string, frameIndex?: number, layerId?: string): ResolveTarget | { error: string };
 
-  setColorAt(x: number, y: number, colorIdx: number): void;
-  drawLine(from: [number, number], to: [number, number], colorIdx: number): void;
-  applyPixelChanges(changes: PixelChange[], spriteId?: string, frameIndex?: number, allFrames?: boolean): { applied: number; addedColors: number[] };
-  fillRegion(x: number, y: number, w: number, h: number, color: number | string | null, spriteId?: string, frameIndex?: number, allFrames?: boolean): number | { error: string };
+  setColorAt(x: number, y: number, colorIdx: number, layerId?: string): void;
+  drawLine(
+    from: [number, number],
+    to: [number, number],
+    colorIdx: number,
+    layerId?: string,
+    pixelPerfect?: boolean,
+    brushMode?: BrushMode,
+  ): void;
+  applyPixelChanges(changes: PixelChange[], spriteId?: string, frameIndex?: number, allFrames?: boolean, layerId?: string): { applied: number; addedColors: number[] };
+  fillRegion(x: number, y: number, w: number, h: number, color: number | string | null, spriteId?: string, frameIndex?: number, allFrames?: boolean, layerId?: string): number | { error: string };
   floodFillAt(
     x: number,
     y: number,
     color: number | string | null,
     spriteId?: string,
     frameIndex?: number,
+    layerId?: string,
   ): void | { error: string };
-  clearFrame(spriteId?: string, frameIndex?: number): void;
+  clearFrame(spriteId?: string, frameIndex?: number, layerId?: string): void;
   movePixels(rect: SelectionRect, dx: number, dy: number): number;
-  transform(op: TransformOp, opts: { dx?: number; dy?: number; color?: number | string | null; frameIndices?: number[]; spriteId?: string }): string | null;
-  replaceColor(from: number | string | null, to: number | string | null, spriteId?: string): number | { error: string };
+  transform(op: TransformOp, opts: { dx?: number; dy?: number; angle?: number; color?: number | string | null; frameIndices?: number[]; spriteId?: string; layerId?: string }): string | null;
+  replaceColor(from: number | string | null, to: number | string | null, spriteId?: string, layerId?: string): number | { error: string };
 
   beginStroke(): void;
   endStroke(label?: string): void;
   interruptStroke(): void;
 
   addPaletteColor(hex: string): { index: number } | { error: string };
+  setPaletteAlpha(index: number, alpha: number): boolean;
+  movePaletteColor(fromIndex: number, toIndex: number): boolean;
   setActiveSprite(spriteId: string, frameIndex?: number): boolean;
   addSprite(opts: { name: string; width: number; height: number; kind: SpriteKind; copyFromId?: string }): string | null;
   deleteSprite(id: string): void;
@@ -290,9 +393,24 @@ interface ProjectState {
     frames: Array<Array<string | null>>;
     kind?: SpriteKind;
   }): string | null;
-  addFrame(spriteId?: string, copyFrameIndex?: number): number;
-  deleteFrame(frameIndex: number, spriteId?: string): boolean;
+  addFrame(spriteId?: string, copyFrameIndex?: number, layerId?: string): number;
+  deleteFrame(frameIndex: number, spriteId?: string, layerId?: string): boolean;
+  moveFrame(frameIndex: number, toIndex: number, spriteId?: string, layerId?: string): boolean;
+  linkFrame(frameIndex: number, targetIndex: number, spriteId?: string, layerId?: string): boolean;
+  unlinkFrame(frameIndex: number, spriteId?: string, layerId?: string): boolean;
   selectFrame(index: number): void;
+  addLayer(spriteId?: string, name?: string, aboveLayerId?: string): string | null;
+  duplicateLayer(layerId: string, spriteId?: string): string | null;
+  deleteLayer(layerId: string, spriteId?: string): boolean;
+  moveLayer(layerId: string, direction: -1 | 1, spriteId?: string): boolean;
+  renameLayer(layerId: string, name: string, spriteId?: string): boolean;
+  setLayerVisibility(layerId: string, visible: boolean, spriteId?: string): boolean;
+  setLayerLocked(layerId: string, locked: boolean, spriteId?: string): boolean;
+  setLayerOpacity(layerId: string, opacity: number, spriteId?: string): boolean;
+  setLayerBlendMode(layerId: string, blendMode: BlendMode, spriteId?: string): boolean;
+  addFrameTag(opts: { name: string; from?: number; to?: number; color?: string }, spriteId?: string): string | null;
+  renameFrameTag(tagId: string, name: string, spriteId?: string): boolean;
+  deleteFrameTag(tagId: string, spriteId?: string): boolean;
 
   ensureTilemap(cols: number, rows: number): void;
   placeTile(x: number, y: number, spriteId: string | null): boolean;
@@ -313,6 +431,26 @@ interface ProjectState {
   dismissStorageRecovery(): void;
   resetProject(kind: "starter" | "blank"): void;
   exportProject(): string;
+}
+
+function updateLayerMetadata(
+  get: () => ProjectState,
+  commit: (next: Project, extra?: Partial<ProjectState>) => void,
+  spriteId: string | undefined,
+  layerId: string,
+  update: (layer: Layer) => void,
+): boolean {
+  const { project } = get();
+  const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+  const layer = sprite ? spriteLayer(sprite, layerId) : null;
+  if (!sprite || !layer) return false;
+  const next = cloneProject(project);
+  const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+  const targetLayer = target.layers!.find((entry) => entry.id === layer.id);
+  if (!targetLayer) return false;
+  update(targetLayer);
+  commit(next);
+  return true;
 }
 
 export const useStore = create<ProjectState>()((set, get) => {
@@ -403,7 +541,7 @@ export const useStore = create<ProjectState>()((set, get) => {
   }
 
   return {
-    project: loadStored() ?? blankProject(),
+    project: cloneProject(loadStored() ?? blankProject()),
     activeSpriteId: "",
     activeFrameIndex: 0,
     selectedTileId: null,
@@ -435,72 +573,91 @@ export const useStore = create<ProjectState>()((set, get) => {
       return project.sprites.find((s) => s.id === activeSpriteId) ?? project.sprites[0];
     },
 
-    resolveTarget(spriteId, frameIndex) {
+    resolveTarget(spriteId, frameIndex, layerId) {
       const { project, activeSpriteId, activeFrameIndex } = get();
       const sprite =
         spriteId === undefined
           ? (project.sprites.find((s) => s.id === activeSpriteId) ?? project.sprites[0])
           : project.sprites.find((s) => s.id === spriteId);
       if (!sprite) return { error: `sprite '${spriteId ?? "(none)"}' not found` };
+      const layer = spriteLayer(sprite, layerId);
+      if (!layer) return { error: `layer '${layerId ?? "(none)"}' not found on '${sprite.name}'` };
+      const frames = layer.frames;
       let fi: number;
       if (frameIndex === undefined) {
         fi = sprite.id === activeSpriteId ? activeFrameIndex : 0;
       } else {
-        if (!Number.isInteger(frameIndex) || frameIndex < 0 || frameIndex >= sprite.frames.length) {
+        if (!Number.isInteger(frameIndex) || frameIndex < 0 || frameIndex >= frames.length) {
           return {
-            error: `frame index ${frameIndex} is out of range for '${sprite.name}' (0-${sprite.frames.length - 1})`,
+            error: `frame index ${frameIndex} is out of range for '${sprite.name}' (0-${frames.length - 1})`,
           };
         }
         fi = frameIndex;
       }
-      fi = Math.max(0, Math.min(fi, sprite.frames.length - 1));
-      if (!sprite.frames[fi]) return { error: `sprite '${sprite.name}' has no frames` };
-      return { sprite, frameIndex: fi };
+      fi = Math.max(0, Math.min(fi, frames.length - 1));
+      if (!frames[fi]) return { error: `layer '${layer.name}' has no frames` };
+      return { sprite, layer, frameIndex: fi };
     },
 
-    setColorAt(x, y, colorIdx) {
-      const t = get().resolveTarget();
+    setColorAt(x, y, colorIdx, layerId) {
+      const t = get().resolveTarget(undefined, undefined, layerId);
       if ("error" in t) return;
-      const { sprite, frameIndex } = t;
+      const { sprite, layer, frameIndex } = t;
       if (!inBounds(x, y, sprite.width, sprite.height)) return;
-      const next = cloneProjectFrame(get().project, sprite.id, frameIndex);
-      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
-      if (frame.pixels[y * sprite.width + x] === colorIdx) return;
-      frame.pixels[y * sprite.width + x] = colorIdx;
-      commit(next, undefined, "local", "Edit", cellHint([{ spriteId: sprite.id, frameIndex, x, y }]));
+      const next = cloneProject(get().project);
+      const targetLayer = next.sprites.find((s) => s.id === sprite.id)!.layers!.find((entry) => entry.id === layer.id)!;
+      const frameIndexes = frameIndexesForEdit(targetLayer.frames, frameIndex);
+      const changed = frameIndexes.filter((index) => targetLayer.frames[index]!.pixels[y * sprite.width + x] !== colorIdx);
+      if (changed.length === 0) return;
+      changed.forEach((index) => {
+        targetLayer.frames[index]!.pixels[y * sprite.width + x] = colorIdx;
+      });
+      commit(next, undefined, "local", "Edit", cellHint(changed.map((index) => ({
+        spriteId: sprite.id,
+        layerId: layer.id,
+        frameIndex: index,
+        x,
+        y,
+      }))));
     },
 
-    drawLine(from, to, colorIdx) {
-      const t = get().resolveTarget();
+    drawLine(from, to, colorIdx, layerId, pixelPerfect = true, brushMode: BrushMode = "solid") {
+      const t = get().resolveTarget(undefined, undefined, layerId);
       if ("error" in t) return;
-      const { sprite, frameIndex } = t;
-      const next = cloneProjectFrame(get().project, sprite.id, frameIndex);
-      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
+      const { sprite, layer, frameIndex } = t;
+      const next = cloneProject(get().project);
+      const targetLayer = next.sprites.find((s) => s.id === sprite.id)!.layers!.find((entry) => entry.id === layer.id)!;
       const pixels: ProjectPixelHint[] = [];
-      for (const [x, y] of bresenhamLine(from[0], from[1], to[0], to[1])) {
+      const line = pixelPerfect
+        ? pixelPerfectLine(from[0], from[1], to[0], to[1])
+        : [...bresenhamLine(from[0], from[1], to[0], to[1])];
+      for (const [x, y] of line) {
+        if (brushMode === "checker" && (x + y) % 2 !== 0) continue;
+        if (brushMode === "dots" && (x % 2 !== 0 || y % 2 !== 0)) continue;
         if (inBounds(x, y, sprite.width, sprite.height)) {
-          if (frame.pixels[y * sprite.width + x] !== colorIdx) {
-            pixels.push({ spriteId: sprite.id, frameIndex, x, y });
+          for (const index of frameIndexesForEdit(targetLayer.frames, frameIndex)) {
+            const frame = targetLayer.frames[index]!;
+            if (frame.pixels[y * sprite.width + x] === colorIdx) continue;
+            frame.pixels[y * sprite.width + x] = colorIdx;
+            pixels.push({ spriteId: sprite.id, layerId: layer.id, frameIndex: index, x, y });
           }
-          frame.pixels[y * sprite.width + x] = colorIdx;
         }
       }
       if (pixels.length > 0) commit(next, undefined, "local", "Edit", cellHint(pixels));
     },
 
-    applyPixelChanges(changes, spriteId, frameIndex, allFrames) {
-      const t = get().resolveTarget(spriteId, frameIndex);
+    applyPixelChanges(changes, spriteId, frameIndex, allFrames, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
       if ("error" in t)
         return { applied: 0, addedColors: [] };
-      const { sprite, frameIndex: fi } = t;
+      const { sprite, layer, frameIndex: fi } = t;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
       let applied = 0;
       const addedColors: number[] = [];
       const changedPixels: ProjectPixelHint[] = [];
-      const frameIdxs = allFrames
-        ? target.frames.map((_, i) => i)
-        : [fi];
+      const frameIdxs = frameIndexesForEdit(targetLayer.frames, fi, !!allFrames);
       for (const ch of changes) {
         const paletteLength = next.palette.length;
         const resolved = resolveColorInto(ch.color ?? null, next);
@@ -508,7 +665,7 @@ export const useStore = create<ProjectState>()((set, get) => {
         const colorIdx = resolved.index;
         if (next.palette.length > paletteLength) addedColors.push(colorIdx);
         for (const fi of frameIdxs) {
-          const frame = target.frames[fi];
+          const frame = targetLayer.frames[fi];
           if (!frame) continue;
           if (!inBounds(ch.x, ch.y, target.width, target.height)) continue;
           const pixelIndex = ch.y * target.width + ch.x;
@@ -516,6 +673,7 @@ export const useStore = create<ProjectState>()((set, get) => {
           frame.pixels[pixelIndex] = colorIdx;
           changedPixels.push({
             spriteId: sprite.id,
+            layerId: layer.id,
             frameIndex: fi,
             x: ch.x,
             y: ch.y,
@@ -527,22 +685,23 @@ export const useStore = create<ProjectState>()((set, get) => {
       return { applied, addedColors };
     },
 
-    fillRegion(x, y, w, h, color, spriteId, frameIndex, allFrames) {
-      const t = get().resolveTarget(spriteId, frameIndex);
+    fillRegion(x, y, w, h, color, spriteId, frameIndex, allFrames, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
       if ("error" in t) return 0;
-      const { sprite, frameIndex: fi } = t;
+      const { sprite, layer, frameIndex: fi } = t;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
       const r = clampRect(x, y, w, h, target.width, target.height);
       if (!r) return 0;
       const resolved = resolveColorInto(color, next);
       if ("error" in resolved) return { error: resolved.error };
       const colorIdx = resolved.index;
-      const fis = allFrames ? target.frames.map((_, i) => i) : [fi];
+      const fis = frameIndexesForEdit(targetLayer.frames, fi, !!allFrames);
       let count = 0;
       const changedPixels: ProjectPixelHint[] = [];
       for (const idx of fis) {
-        const frame = target.frames[idx];
+        const frame = targetLayer.frames[idx];
         if (!frame) continue;
         for (let yy = r.y; yy < r.y + r.h; yy++)
           for (let xx = r.x; xx < r.x + r.w; xx++) {
@@ -551,6 +710,7 @@ export const useStore = create<ProjectState>()((set, get) => {
             frame.pixels[pixelIndex] = colorIdx;
             changedPixels.push({
               spriteId: sprite.id,
+              layerId: layer.id,
               frameIndex: idx,
               x: xx,
               y: yy,
@@ -562,48 +722,57 @@ export const useStore = create<ProjectState>()((set, get) => {
       return count;
     },
 
-    floodFillAt(x, y, color, spriteId, frameIndex) {
-      const t = get().resolveTarget(spriteId, frameIndex);
+    floodFillAt(x, y, color, spriteId, frameIndex, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
       if ("error" in t) return;
-      const { sprite, frameIndex: fi } = t;
+      const { sprite, layer, frameIndex: fi } = t;
       const next = cloneProject(get().project);
-      const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[fi];
-      const previousFrame = sprite.frames[fi]!;
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const changedPixels: ProjectPixelHint[] = [];
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
       const resolved = resolveColorInto(color, next);
       if ("error" in resolved) return { error: resolved.error };
-      frame.pixels = floodFill(frame.pixels, sprite.width, sprite.height, x, y, resolved.index);
-      const changedPixels: ProjectPixelHint[] = [];
-      for (let index = 0; index < frame.pixels.length; index++) {
-        if (previousFrame.pixels[index] === frame.pixels[index]) continue;
-        changedPixels.push({
-          spriteId: sprite.id,
-          frameIndex: fi,
-          x: index % sprite.width,
-          y: Math.floor(index / sprite.width),
-        });
+      for (const frameIndex of frameIndexesForEdit(targetLayer.frames, fi)) {
+        const frame = targetLayer.frames[frameIndex]!;
+        const previousFrame = layer.frames[frameIndex]!;
+        frame.pixels = floodFill(frame.pixels, sprite.width, sprite.height, x, y, resolved.index);
+        for (let index = 0; index < frame.pixels.length; index++) {
+          if (previousFrame.pixels[index] === frame.pixels[index]) continue;
+          changedPixels.push({
+            spriteId: sprite.id,
+            layerId: layer.id,
+            frameIndex,
+            x: index % sprite.width,
+            y: Math.floor(index / sprite.width),
+          });
+        }
       }
       if (changedPixels.length > 0) {
         commit(next, undefined, "local", "Edit", cellHint(changedPixels));
       }
     },
 
-    clearFrame(spriteId, frameIndex) {
-      const t = get().resolveTarget(spriteId, frameIndex);
+    clearFrame(spriteId, frameIndex, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
       if ("error" in t) return;
-      const { sprite, frameIndex: fi } = t;
+      const { sprite, layer, frameIndex: fi } = t;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
-      const previousFrame = sprite.frames[fi]!;
-      target.frames[fi].pixels = emptyPixels(target.width, target.height);
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
       const changedPixels: ProjectPixelHint[] = [];
-      for (let index = 0; index < previousFrame.pixels.length; index++) {
-        if (previousFrame.pixels[index] === TRANSPARENT) continue;
-        changedPixels.push({
-          spriteId: sprite.id,
-          frameIndex: fi,
-          x: index % sprite.width,
-          y: Math.floor(index / sprite.width),
-        });
+      for (const frameIndexToClear of frameIndexesForEdit(targetLayer.frames, fi)) {
+        const previousFrame = layer.frames[frameIndexToClear]!;
+        targetLayer.frames[frameIndexToClear]!.pixels = emptyPixels(target.width, target.height);
+        for (let index = 0; index < previousFrame.pixels.length; index++) {
+          if (previousFrame.pixels[index] === TRANSPARENT) continue;
+          changedPixels.push({
+            spriteId: sprite.id,
+            layerId: layer.id,
+            frameIndex: frameIndexToClear,
+            x: index % sprite.width,
+            y: Math.floor(index / sprite.width),
+          });
+        }
       }
       if (changedPixels.length > 0) {
         commit(next, undefined, "local", "Edit", cellHint(changedPixels));
@@ -617,8 +786,9 @@ export const useStore = create<ProjectState>()((set, get) => {
       if (ox === 0 && oy === 0) return 0;
       const { project } = get();
       const sprite = project.sprites.find((s) => s.id === rect.spriteId);
-      const frame = sprite?.frames[rect.frameIndex];
-      if (!sprite || !frame) return 0;
+      const layer = sprite ? spriteLayer(sprite, rect.layerId) : null;
+      const frame = layer?.frames[rect.frameIndex];
+      if (!sprite || !layer || !frame) return 0;
       const sx0 = Math.max(0, Math.round(rect.x));
       const sy0 = Math.max(0, Math.round(rect.y));
       const sx1 = Math.min(sprite.width, Math.round(rect.x + rect.width));
@@ -626,30 +796,33 @@ export const useStore = create<ProjectState>()((set, get) => {
       if (sx1 <= sx0 || sy1 <= sy0) return 0;
       const next = cloneProject(project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
-      const pixels = target.frames[rect.frameIndex]!.pixels;
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
       const w = sx1 - sx0;
       const h = sy1 - sy0;
-      const buffer = new Array<number>(w * h);
       const changedPixels: ProjectPixelHint[] = [];
-      for (let y = sy0; y < sy1; y++)
-        for (let x = sx0; x < sx1; x++) {
-          const index = y * sprite.width + x;
-          buffer[(y - sy0) * w + (x - sx0)] = pixels[index];
-          if (pixels[index] !== TRANSPARENT) {
-            pixels[index] = TRANSPARENT;
-            changedPixels.push({ spriteId: sprite.id, frameIndex: rect.frameIndex, x, y });
-          }
-        }
       let moved = 0;
-      for (let y = sy0; y < sy1; y++)
-        for (let x = sx0; x < sx1; x++) {
-          const nx = x + ox;
-          const ny = y + oy;
-          if (nx < 0 || ny < 0 || nx >= sprite.width || ny >= sprite.height) continue;
-          pixels[ny * sprite.width + nx] = buffer[(y - sy0) * w + (x - sx0)];
-          changedPixels.push({ spriteId: sprite.id, frameIndex: rect.frameIndex, x: nx, y: ny });
-          moved++;
-        }
+      for (const frameIndex of frameIndexesForEdit(targetLayer.frames, rect.frameIndex)) {
+        const pixels = targetLayer.frames[frameIndex]!.pixels;
+        const buffer = new Array<number>(w * h);
+        for (let y = sy0; y < sy1; y++)
+          for (let x = sx0; x < sx1; x++) {
+            const index = y * sprite.width + x;
+            buffer[(y - sy0) * w + (x - sx0)] = pixels[index]!;
+            if (pixels[index] !== TRANSPARENT) {
+              pixels[index] = TRANSPARENT;
+              changedPixels.push({ spriteId: sprite.id, layerId: layer.id, frameIndex, x, y });
+            }
+          }
+        for (let y = sy0; y < sy1; y++)
+          for (let x = sx0; x < sx1; x++) {
+            const nx = x + ox;
+            const ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= sprite.width || ny >= sprite.height) continue;
+            pixels[ny * sprite.width + nx] = buffer[(y - sy0) * w + (x - sx0)]!;
+            changedPixels.push({ spriteId: sprite.id, layerId: layer.id, frameIndex, x: nx, y: ny });
+            moved++;
+          }
+      }
       if (changedPixels.length > 0) {
         commit(next, undefined, "local", "Move selection", cellHint(changedPixels));
       }
@@ -657,25 +830,25 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     transform(op, opts) {
-      const t = get().resolveTarget(opts.spriteId);
+      const t = get().resolveTarget(opts.spriteId, undefined, opts.layerId);
       if ("error" in t) return t.error;
-      const { sprite } = t;
+      const { sprite, layer } = t;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
       let fis: number[];
       if (opts.frameIndices && opts.frameIndices.length) {
         fis = [...new Set(opts.frameIndices)];
         const invalid = fis.find(
-          (index) => !Number.isInteger(index) || index < 0 || index >= target.frames.length,
+          (index) => !Number.isInteger(index) || index < 0 || index >= layer.frames.length,
         );
         if (invalid !== undefined) return `frame index ${invalid} is out of range for '${target.name}'`;
       } else {
-        fis = target.frames.map((_, i) => i);
+        fis = layer.frames.map((_, i) => i);
       }
       const newW = target.height;
       const newH = target.width;
 
-      if (op === "rotate_90" && fis.length !== target.frames.length) {
+      if (op === "rotate_90" && fis.length !== layer.frames.length) {
         return "rotating a single frame would desync sprite dimensions; rotate all frames instead";
       }
 
@@ -686,23 +859,29 @@ export const useStore = create<ProjectState>()((set, get) => {
         colorIdx = resolved.index;
       }
 
-      for (const fi of fis) {
-        const frame: Frame = target.frames[fi];
-        if (op === "flip_h") frame.pixels = flipH(frame.pixels, target.width, target.height);
-        else if (op === "flip_v") frame.pixels = flipV(frame.pixels, target.width, target.height);
-        else if (op === "rotate_90") {
-          const r = rotate90(frame.pixels, target.width, target.height);
-          frame.pixels = r.pixels;
-        } else if (op === "shift") {
-          frame.pixels = shiftWrap(
-            frame.pixels,
-            target.width,
-            target.height,
-            opts.dx ?? 0,
-            opts.dy ?? 0,
-          );
-        } else if (op === "outline") {
-          frame.pixels = outlineOp(frame.pixels, target.width, target.height, colorIdx);
+      const layers = target.layers ?? [];
+      for (const targetLayer of layers) {
+        for (const fi of fis) {
+          const frame: Frame | undefined = targetLayer.frames[fi];
+          if (!frame) continue;
+          if (op === "flip_h") frame.pixels = flipH(frame.pixels, target.width, target.height);
+          else if (op === "flip_v") frame.pixels = flipV(frame.pixels, target.width, target.height);
+          else if (op === "rotate_90") {
+            const r = rotate90(frame.pixels, target.width, target.height);
+            frame.pixels = r.pixels;
+          } else if (op === "shift") {
+            frame.pixels = shiftWrap(
+              frame.pixels,
+              target.width,
+              target.height,
+              opts.dx ?? 0,
+              opts.dy ?? 0,
+            );
+          } else if (op === "rotate") {
+            frame.pixels = rotateNearest(frame.pixels, target.width, target.height, opts.angle ?? 0);
+          } else if (op === "outline") {
+            frame.pixels = outlineOp(frame.pixels, target.width, target.height, colorIdx);
+          }
         }
       }
       if (op === "rotate_90") {
@@ -713,7 +892,7 @@ export const useStore = create<ProjectState>()((set, get) => {
       return null;
     },
 
-    replaceColor(from, to, spriteId) {
+    replaceColor(from, to, spriteId, layerId) {
       const { project } = get();
       const target = spriteId ? project.sprites.find((s) => s.id === spriteId) : null;
       const sprites = target ? [target] : project.sprites;
@@ -727,12 +906,19 @@ export const useStore = create<ProjectState>()((set, get) => {
       let count = 0;
       for (const sp of sprites) {
         const nsp = next.sprites.find((s) => s.id === sp.id)!;
-        for (const f of nsp.frames)
-          for (let i = 0; i < f.pixels.length; i++)
-            if (f.pixels[i] === fromIdx) {
-              f.pixels[i] = toIdx;
-              count++;
+        const layers = layerId
+          ? (nsp.layers ?? []).filter((layer) => layer.id === layerId)
+          : nsp.layers ?? [{ frames: nsp.frames } as Layer];
+        for (const entry of layers) {
+          for (const f of entry.frames) {
+            for (let i = 0; i < f.pixels.length; i++) {
+              if (f.pixels[i] === fromIdx) {
+                f.pixels[i] = toIdx;
+                count++;
+              }
             }
+          }
+        }
       }
       if (count > 0) commit(next);
       return count;
@@ -750,6 +936,52 @@ export const useStore = create<ProjectState>()((set, get) => {
       next.palette.push(normalized);
       commit(next, undefined, "local", "Edit", { kind: "palette" });
       return { index: next.palette.length - 1 };
+    },
+
+    setPaletteAlpha(index, alpha) {
+      const { project } = get();
+      if (!Number.isInteger(index) || index < 0 || index >= project.palette.length) return false;
+      const nextAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+      const currentAlpha = project.paletteAlpha?.[index] ?? 1;
+      if (Math.abs(currentAlpha - nextAlpha) < 0.001) return true;
+      const next = cloneProject(project);
+      next.paletteAlpha = Array.from({ length: next.palette.length }, (_, i) => next.paletteAlpha?.[i] ?? 1);
+      next.paletteAlpha[index] = nextAlpha;
+      commit(next, undefined, "local", "Set palette alpha", { kind: "palette" });
+      return true;
+    },
+
+    movePaletteColor(fromIndex, toIndex) {
+      const { project } = get();
+      if (
+        !Number.isInteger(fromIndex) ||
+        !Number.isInteger(toIndex) ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= project.palette.length ||
+        toIndex >= project.palette.length ||
+        fromIndex === toIndex
+      ) return false;
+      const next = cloneProject(project);
+      const [color] = next.palette.splice(fromIndex, 1);
+      next.palette.splice(toIndex, 0, color!);
+      const alpha = Array.from({ length: project.palette.length }, (_, index) => project.paletteAlpha?.[index] ?? 1);
+      const [movedAlpha] = alpha.splice(fromIndex, 1);
+      alpha.splice(toIndex, 0, movedAlpha ?? 1);
+      next.paletteAlpha = alpha;
+      const remap = (pixel: number): number => {
+        if (pixel === fromIndex) return toIndex;
+        if (fromIndex < toIndex && pixel > fromIndex && pixel <= toIndex) return pixel - 1;
+        if (fromIndex > toIndex && pixel >= toIndex && pixel < fromIndex) return pixel + 1;
+        return pixel;
+      };
+      for (const sprite of next.sprites) {
+        for (const layer of sprite.layers ?? []) {
+          for (const frame of layer.frames) frame.pixels = frame.pixels.map(remap);
+        }
+      }
+      commit(next, undefined, "local", "Reorder palette", { kind: "palette" });
+      return true;
     },
 
     setActiveSprite(spriteId, frameIndex) {
@@ -807,6 +1039,15 @@ export const useStore = create<ProjectState>()((set, get) => {
           pixels: i === 0 ? pixels : [...pixels],
         })),
       };
+      sprite.layers = [{
+        id: `${id}-artwork`,
+        name: "Artwork",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        frames: sprite.frames,
+      }];
       next.sprites.push(sprite);
       commit(next, { activeSpriteId: id, activeFrameIndex: 0 });
       return id;
@@ -900,59 +1141,348 @@ export const useStore = create<ProjectState>()((set, get) => {
         kind: isSpriteKind(opts.kind) ? opts.kind : "item",
         frames: safeFrames,
       });
+      const imported = next.sprites[next.sprites.length - 1]!;
+      imported.layers = [{
+        id: `${id}-artwork`,
+        name: "Artwork",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        frames: imported.frames,
+      }];
       commit(next, { activeSpriteId: id, activeFrameIndex: 0 });
       return id;
     },
 
-    addFrame(spriteId, copyFrameIndex) {
-      const t = get().resolveTarget(spriteId);
+    addFrame(spriteId, copyFrameIndex, layerId) {
+      const t = get().resolveTarget(spriteId, undefined, layerId);
       if ("error" in t) return -1;
-      const { sprite } = t;
-      if (sprite.frames.length >= MAX_FRAMES_PER_SPRITE) return -1;
+      const { sprite, layer } = t;
+      if (layer.frames.length >= MAX_FRAMES_PER_SPRITE) return -1;
       if (projectPixelCells(get().project) + sprite.width * sprite.height > MAX_TOTAL_PIXEL_CELLS) return -1;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
-      const srcIdx = copyFrameIndex ?? target.frames.length - 1;
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
+      const srcIdx = copyFrameIndex ?? targetLayer.frames.length - 1;
       if (
         !Number.isInteger(srcIdx) ||
         srcIdx < 0 ||
-        srcIdx >= target.frames.length
+        srcIdx >= targetLayer.frames.length
       ) {
         return -1;
       }
-      const src = target.frames[Math.max(0, Math.min(srcIdx, target.frames.length - 1))];
-      const usedFrameIds = new Set(
-        get().project.sprites.flatMap((entry) => entry.frames.map((frame) => frame.id)),
-      );
+      const src = targetLayer.frames[Math.max(0, Math.min(srcIdx, targetLayer.frames.length - 1))];
+      const usedFrameIds = allFrameIds(get().project);
       let id: string;
       try {
         id = createUniqueId("frame", usedFrameIds);
       } catch {
         return -1;
       }
-      target.frames.push({ id, pixels: src ? [...src.pixels] : emptyPixels(target.width, target.height) });
-      commit(next, { activeFrameIndex: target.frames.length - 1 });
-      return target.frames.length - 1;
+      targetLayer.frames.push({ id, pixels: src ? [...src.pixels] : emptyPixels(target.width, target.height) });
+      commit(next, { activeFrameIndex: targetLayer.frames.length - 1 });
+      return targetLayer.frames.length - 1;
     },
 
-    deleteFrame(frameIndex, spriteId) {
-      const t = get().resolveTarget(spriteId, frameIndex);
+    deleteFrame(frameIndex, spriteId, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
       if ("error" in t) return false;
-      const { sprite, frameIndex: fi } = t;
-      if (sprite.frames.length <= 1) return false;
+      const { sprite, layer, frameIndex: fi } = t;
+      if (layer.frames.length <= 1) return false;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
-      target.frames.splice(fi, 1);
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
+      targetLayer.frames.splice(fi, 1);
+      if (target.frameTags) {
+        target.frameTags = target.frameTags.map((tag) => normalizeTagRange({
+          ...tag,
+          from: tag.from > fi ? tag.from - 1 : tag.from,
+          to: tag.to > fi ? tag.to - 1 : tag.to,
+        }, target.frames.length));
+      }
       const extra: Partial<ProjectState> = {};
       if (sprite.id === get().activeSpriteId) {
-        extra.activeFrameIndex = Math.min(get().activeFrameIndex, target.frames.length - 1);
+        extra.activeFrameIndex = Math.min(get().activeFrameIndex, targetLayer.frames.length - 1);
       }
       commit(next, extra);
       return true;
     },
 
+    moveFrame(frameIndex, toIndex, spriteId, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
+      if ("error" in t) return false;
+      const { sprite, layer } = t;
+      if (!Number.isInteger(toIndex) || toIndex < 0 || toIndex >= layer.frames.length || toIndex === frameIndex) {
+        return false;
+      }
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      const targetLayer = target.layers!.find((entry) => entry.id === layer.id)!;
+      const [moved] = targetLayer.frames.splice(frameIndex, 1);
+      targetLayer.frames.splice(toIndex, 0, moved!);
+      if (target.frameTags) {
+        target.frameTags = target.frameTags.map((tag) => ({
+          ...tag,
+          from: movedFrameIndex(tag.from, frameIndex, toIndex),
+          to: movedFrameIndex(tag.to, frameIndex, toIndex),
+        }));
+      }
+      const extra: Partial<ProjectState> = {};
+      if (sprite.id === get().activeSpriteId) {
+        extra.activeFrameIndex = movedFrameIndex(get().activeFrameIndex, frameIndex, toIndex);
+      }
+      commit(next, extra);
+      return true;
+    },
+
+    linkFrame(frameIndex, targetIndex, spriteId, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
+      if ("error" in t) return false;
+      const { sprite, layer } = t;
+      if (
+        !Number.isInteger(targetIndex) ||
+        targetIndex < 0 ||
+        targetIndex >= layer.frames.length ||
+        targetIndex === frameIndex
+      ) return false;
+      const next = cloneProject(get().project);
+      const targetLayer = next.sprites.find((entry) => entry.id === sprite.id)!.layers!.find((entry) => entry.id === layer.id)!;
+      const source = targetLayer.frames[frameIndex]!;
+      const target = targetLayer.frames[targetIndex]!;
+      const usedIds = new Set(targetLayer.frames.map((frame) => frame.linkId).filter((id): id is string => Boolean(id)));
+      let linkId = source.linkId ?? target.linkId;
+      if (!linkId) {
+        try {
+          linkId = createUniqueId("link", usedIds);
+        } catch {
+          return false;
+        }
+      }
+      const sharedPixels = [...source.pixels];
+      targetLayer.frames.forEach((frame) => {
+        if (frame.linkId === source.linkId || frame.linkId === target.linkId) {
+          frame.linkId = linkId;
+          frame.pixels = [...sharedPixels];
+        }
+      });
+      source.linkId = linkId;
+      source.pixels = [...sharedPixels];
+      target.linkId = linkId;
+      target.pixels = [...sharedPixels];
+      commit(next);
+      return true;
+    },
+
+    unlinkFrame(frameIndex, spriteId, layerId) {
+      const t = get().resolveTarget(spriteId, frameIndex, layerId);
+      if ("error" in t) return false;
+      const frame = t.layer.frames[t.frameIndex];
+      if (!frame?.linkId) return false;
+      const next = cloneProject(get().project);
+      const target = next.sprites.find((entry) => entry.id === t.sprite.id)!.layers!.find((entry) => entry.id === t.layer.id)!;
+      delete target.frames[t.frameIndex]!.linkId;
+      commit(next);
+      return true;
+    },
+
     selectFrame(index) {
       set({ activeFrameIndex: index });
+    },
+
+    addLayer(spriteId, name, aboveLayerId) {
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      if (!sprite) return null;
+      const currentLayers = sprite.layers?.length ? sprite.layers : [spriteLayer(sprite)!];
+      if (currentLayers.length >= MAX_LAYERS_PER_SPRITE) return null;
+      const frameCount = currentLayers[0]!.frames.length;
+      if (projectPixelCells(project) + sprite.width * sprite.height * frameCount > MAX_TOTAL_PIXEL_CELLS) return null;
+      const next = cloneProject(project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      const layers = target.layers!;
+      const usedIds = allLayerIds(project);
+      let id: string;
+      try {
+        id = createUniqueId("layer", usedIds);
+      } catch {
+        return null;
+      }
+      const frameIds = allFrameIds(project);
+      const frames = Array.from({ length: frameCount }, (_, index) => {
+        let frameId: string;
+        try {
+          frameId = createUniqueId("frame", frameIds);
+        } catch {
+          frameId = `${id}-f${index}`;
+        }
+        frameIds.add(frameId);
+        return { id: frameId, pixels: emptyPixels(target.width, target.height) };
+      });
+      const layer: Layer = {
+        id,
+        name: (typeof name === "string" ? name.trim() : "").slice(0, MAX_SPRITE_NAME_LENGTH) || "Layer",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        frames,
+      };
+      const afterIndex = aboveLayerId ? layers.findIndex((entry) => entry.id === aboveLayerId) + 1 : layers.length;
+      layers.splice(Math.max(0, afterIndex), 0, layer);
+      commit(next);
+      return id;
+    },
+
+    duplicateLayer(layerId, spriteId) {
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      const source = sprite ? spriteLayer(sprite, layerId) : null;
+      if (!sprite || !source || (sprite.layers?.length ?? 0) >= MAX_LAYERS_PER_SPRITE) return null;
+      if (projectPixelCells(project) + sprite.width * sprite.height * source.frames.length > MAX_TOTAL_PIXEL_CELLS) return null;
+      const next = cloneProject(project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      const layers = target.layers!;
+      const sourceIndex = layers.findIndex((entry) => entry.id === source.id);
+      const usedIds = allLayerIds(project);
+      const usedFrameIds = allFrameIds(project);
+      let newId: string;
+      try {
+        newId = createUniqueId("layer", usedIds);
+      } catch {
+        return null;
+      }
+      const copy: Layer = {
+        ...layers[sourceIndex]!,
+        id: newId,
+        name: `${source.name} copy`.slice(0, MAX_SPRITE_NAME_LENGTH),
+        frames: layers[sourceIndex]!.frames.map((frame, index) => {
+          let id: string;
+          try {
+            id = createUniqueId("frame", usedFrameIds);
+          } catch {
+            id = `${newId}-f${index}`;
+          }
+          usedFrameIds.add(id);
+          return { id, pixels: [...frame.pixels] };
+        }),
+      };
+      layers.splice(sourceIndex + 1, 0, copy);
+      commit(next);
+      return newId;
+    },
+
+    deleteLayer(layerId, spriteId) {
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      if (!sprite || !sprite.layers || sprite.layers.length <= 1) return false;
+      const next = cloneProject(project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      const index = target.layers!.findIndex((entry) => entry.id === layerId);
+      if (index < 0) return false;
+      target.layers!.splice(index, 1);
+      target.frames = target.layers![0]!.frames;
+      commit(next);
+      return true;
+    },
+
+    moveLayer(layerId, direction, spriteId) {
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      if (!sprite?.layers) return false;
+      const index = sprite.layers.findIndex((entry) => entry.id === layerId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= sprite.layers.length) return false;
+      const next = cloneProject(project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      const [moved] = target.layers!.splice(index, 1);
+      target.layers!.splice(nextIndex, 0, moved!);
+      target.frames = target.layers![0]!.frames;
+      commit(next);
+      return true;
+    },
+
+    renameLayer(layerId, name, spriteId) {
+      const trimmed = typeof name === "string" ? name.trim().slice(0, MAX_SPRITE_NAME_LENGTH) : "";
+      if (!trimmed) return false;
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      const layer = sprite ? spriteLayer(sprite, layerId) : null;
+      if (!sprite || !layer || layer.name === trimmed) return Boolean(layer);
+      const next = cloneProject(project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      target.layers!.find((entry) => entry.id === layer.id)!.name = trimmed;
+      commit(next);
+      return true;
+    },
+
+    setLayerVisibility(layerId, visible, spriteId) {
+      return updateLayerMetadata(get, commit, spriteId, layerId, (layer) => { layer.visible = visible; });
+    },
+
+    setLayerLocked(layerId, locked, spriteId) {
+      return updateLayerMetadata(get, commit, spriteId, layerId, (layer) => { layer.locked = locked; });
+    },
+
+    setLayerOpacity(layerId, opacity, spriteId) {
+      const value = Math.max(0, Math.min(1, Number.isFinite(opacity) ? opacity : 1));
+      return updateLayerMetadata(get, commit, spriteId, layerId, (layer) => { layer.opacity = value; });
+    },
+
+    setLayerBlendMode(layerId, blendMode, spriteId) {
+      if (!isBlendMode(blendMode)) return false;
+      return updateLayerMetadata(get, commit, spriteId, layerId, (layer) => { layer.blendMode = blendMode; });
+    },
+
+    addFrameTag(opts, spriteId) {
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      const name = typeof opts.name === "string" ? opts.name.trim().slice(0, MAX_SPRITE_NAME_LENGTH) : "";
+      if (!sprite || !name) return null;
+      const next = cloneProject(project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      const used = new Set((target.frameTags ?? []).map((tag) => tag.id));
+      let id: string;
+      try {
+        id = createUniqueId("tag", used);
+      } catch {
+        return null;
+      }
+      const from = Math.max(0, Math.min(target.frames.length - 1, Math.round(opts.from ?? 0)));
+      const to = Math.max(from, Math.min(target.frames.length - 1, Math.round(opts.to ?? target.frames.length - 1)));
+      target.frameTags = [...(target.frameTags ?? []), {
+        id,
+        name,
+        from,
+        to,
+        color: normalizeHex(opts.color ?? "#f6c445") ?? "#f6c445",
+      }];
+      commit(next);
+      return id;
+    },
+
+    renameFrameTag(tagId, name, spriteId) {
+      const trimmed = typeof name === "string" ? name.trim().slice(0, MAX_SPRITE_NAME_LENGTH) : "";
+      if (!trimmed) return false;
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      const tag = sprite?.frameTags?.find((entry) => entry.id === tagId);
+      if (!sprite || !tag) return false;
+      const next = cloneProject(project);
+      next.sprites.find((entry) => entry.id === sprite.id)!.frameTags!.find((entry) => entry.id === tagId)!.name = trimmed;
+      commit(next);
+      return true;
+    },
+
+    deleteFrameTag(tagId, spriteId) {
+      const { project } = get();
+      const sprite = spriteId ? project.sprites.find((entry) => entry.id === spriteId) : get().activeSprite();
+      if (!sprite?.frameTags?.some((tag) => tag.id === tagId)) return false;
+      const next = cloneProject(project);
+      const target = next.sprites.find((entry) => entry.id === sprite.id)!;
+      target.frameTags = (target.frameTags ?? []).filter((tag) => tag.id !== tagId);
+      commit(next);
+      return true;
     },
 
     ensureTilemap(cols, rows) {
@@ -1174,7 +1704,8 @@ export const useStore = create<ProjectState>()((set, get) => {
     resetProject(kind) {
       finishStroke();
       const p = kind === "starter" ? createStarterProject() : blankProject();
-      commit(p, { activeSpriteId: p.sprites[0].id, activeFrameIndex: 0, selectedTileId: null });
+      const prepared = cloneProject(p);
+      commit(prepared, { activeSpriteId: prepared.sprites[0].id, activeFrameIndex: 0, selectedTileId: null });
     },
 
     exportProject() {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { PixelPoint, PresenceStatus, RoomPresence } from "../realtime/protocol";
+import type { ActiveRoomListing, PixelPoint, PresenceStatus, RoomPresence } from "../realtime/protocol";
 import { clampTutorialStep } from "../engine/tutorial";
 
 const ACT_AS_AGENT_KEY = "pixel-art-tutor.act-as-agent.v1";
@@ -29,6 +29,8 @@ export type RoomConnectionStatus =
   | "connected"
   | "offline"
   | "error";
+
+export type RoomDirectoryStatus = "idle" | "loading" | "ready" | "error" | "unavailable";
 
 export interface AgentPreviewPixel {
   x: number;
@@ -73,6 +75,9 @@ interface UiState {
   roomActorId: string;
   roomDisplayName: string;
   roomHost: string | null;
+  activeRooms: ActiveRoomListing[];
+  roomDirectoryStatus: RoomDirectoryStatus;
+  roomDirectoryError: string | null;
   roomCanUndo: boolean;
   roomCanRedo: boolean;
   roomSyncBlocked: boolean;
@@ -106,7 +111,43 @@ interface UiState {
     roomHost?: string | null;
   }): void;
   setRoomPeers(peers: RoomPresence[]): void;
+  setActiveRooms(
+    activeRooms: ActiveRoomListing[],
+    status?: RoomDirectoryStatus,
+    error?: string | null,
+  ): void;
   setRoomHistory(canUndo: boolean, canRedo: boolean): void;
+}
+
+function mergeAgentPreview(previous: RoomPresence | undefined, next: RoomPresence): RoomPresence {
+  if (
+    !previous ||
+    previous.kind !== "agent" ||
+    next.kind !== "agent" ||
+    previous.status === "idle" ||
+    previous.status === "done" ||
+    next.status === "idle" ||
+    next.status === "done" ||
+    previous.tool !== next.tool ||
+    previous.message !== next.message ||
+    previous.spriteId !== next.spriteId ||
+    previous.frameIndex !== next.frameIndex ||
+    previous.progress <= 0 ||
+    next.progress <= 0 ||
+    next.progress < previous.progress ||
+    previous.preview.length === 0 ||
+    next.preview.length === 0
+  ) {
+    return next;
+  }
+
+  // The worker bounds each presence packet to its most recent 300 cells. Keep
+  // a bounded packet history in the UI so a long action still reads as one
+  // continuous stroke instead of a moving 300-cell window.
+  const cells = new Map<string, AgentPreviewPixel>();
+  for (const cell of previous.preview) cells.set(`${cell.x},${cell.y}`, cell);
+  for (const cell of next.preview) cells.set(`${cell.x},${cell.y}`, cell);
+  return { ...next, preview: [...cells.values()] };
 }
 
 export const useUi = create<UiState>()((set) => ({
@@ -123,6 +164,9 @@ export const useUi = create<UiState>()((set) => ({
   roomActorId: "",
   roomDisplayName: "",
   roomHost: null,
+  activeRooms: [],
+  roomDirectoryStatus: "idle",
+  roomDirectoryError: null,
   roomCanUndo: false,
   roomCanRedo: false,
   roomSyncBlocked: false,
@@ -206,6 +250,12 @@ export const useUi = create<UiState>()((set) => ({
     ),
   setRoomConnection: (patch) => set(patch),
   setRoomPeers: (peers) =>
-    set({ roomPeers: Object.fromEntries(peers.map((peer) => [peer.id, peer])) }),
+    set((state) => ({
+      roomPeers: Object.fromEntries(
+        peers.map((peer) => [peer.id, mergeAgentPreview(state.roomPeers[peer.id], peer)]),
+      ),
+    })),
+  setActiveRooms: (activeRooms, roomDirectoryStatus = "ready", roomDirectoryError = null) =>
+    set({ activeRooms, roomDirectoryStatus, roomDirectoryError }),
   setRoomHistory: (roomCanUndo, roomCanRedo) => set({ roomCanUndo, roomCanRedo }),
 }));

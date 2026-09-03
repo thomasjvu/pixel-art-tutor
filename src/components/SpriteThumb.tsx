@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Sprite } from "../types";
+import type { Frame, Sprite } from "../types";
 import { TRANSPARENT } from "../types";
 
 export function SpriteThumb({
@@ -7,11 +7,13 @@ export function SpriteThumb({
   frameIndex,
   palette,
   size = 48,
+  frames,
 }: {
   sprite: Sprite;
   frameIndex?: number;
   palette: string[];
   size?: number;
+  frames?: Frame[];
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
@@ -20,7 +22,8 @@ export function SpriteThumb({
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const frame = sprite.frames[frameIndex ?? 0] ?? sprite.frames[0];
+    const sourceFrames = frames ?? sprite.frames;
+    const frame = sourceFrames[frameIndex ?? 0] ?? sourceFrames[0];
     canvas.width = sprite.width;
     canvas.height = sprite.height;
     ctx.clearRect(0, 0, sprite.width, sprite.height);
@@ -32,7 +35,7 @@ export function SpriteThumb({
         ctx.fillStyle = palette[p];
         ctx.fillRect(x, y, 1, 1);
       }
-  }, [sprite, frameIndex, palette]);
+  }, [sprite, frameIndex, palette, frames]);
 
   return (
     <canvas

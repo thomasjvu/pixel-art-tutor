@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { roomClient } from "../realtime/roomClient";
 import { useStore } from "../store/projectStore";
 import { useUi } from "../store/uiStore";
@@ -14,7 +14,7 @@ function statusLabel(status: ReturnType<typeof useUi.getState>["roomStatus"]): s
     case "offline":
       return "Trying again…";
     case "disabled":
-      return "Room server not configured";
+      return "Room unavailable";
     case "error":
       return "Room error";
     default:
@@ -30,6 +30,9 @@ export function RoomPanel() {
   const roomPeers = useUi((state) => state.roomPeers);
   const peers = Object.values(roomPeers);
   const roomHost = useUi((state) => state.roomHost);
+  const activeRooms = useUi((state) => state.activeRooms);
+  const roomDirectoryStatus = useUi((state) => state.roomDirectoryStatus);
+  const roomDirectoryError = useUi((state) => state.roomDirectoryError);
   const followAgent = useUi((state) => state.followAgent);
   const setFollowAgent = useUi((state) => state.setFollowAgent);
   const actAsAgent = useUi((state) => state.actAsAgent);
@@ -40,6 +43,21 @@ export function RoomPanel() {
   const [copied, setCopied] = useState(false);
   const roomInput = roomDraft ?? roomId ?? "";
   const nameInput = nameDraft ?? (displayName || roomClient.displayName);
+
+  useEffect(() => {
+    void roomClient.refreshRooms();
+    const refreshTimer = window.setInterval(() => void roomClient.refreshRooms(), 15_000);
+    return () => {
+      window.clearInterval(refreshTimer);
+      roomClient.cancelRoomDirectoryRefresh();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (roomStatus !== "connected") return;
+    const refreshTimer = window.setTimeout(() => void roomClient.refreshRooms(), 200);
+    return () => window.clearTimeout(refreshTimer);
+  }, [roomStatus]);
 
   function downloadRoomBackup() {
     const state = useStore.getState();
@@ -73,6 +91,13 @@ export function RoomPanel() {
     setRoomDraft(room);
   }
 
+  function joinListedRoom(nextRoomId: string) {
+    roomClient.setDisplayName(nameInput);
+    setNameDraft(nameInput);
+    setRoomDraft(nextRoomId);
+    roomClient.joinRoom(nextRoomId);
+  }
+
   return (
     <div className="panel room-panel">
       <div className={`room-status status-${roomStatus}`}>
@@ -80,6 +105,55 @@ export function RoomPanel() {
         <strong>{statusLabel(roomStatus)}</strong>
         {roomStatus === "connected" && <span>· {peers.length + 1} here</span>}
       </div>
+
+      <section className="active-rooms" aria-labelledby="active-rooms-heading">
+        <div className="active-rooms-heading">
+          <h4 id="active-rooms-heading">Active rooms</h4>
+          <button
+            className="room-refresh"
+            type="button"
+            onClick={() => void roomClient.refreshRooms()}
+            disabled={roomDirectoryStatus === "loading"}
+            title="Refresh active rooms"
+            aria-label="Refresh active rooms"
+          >
+            <Icon icon="mingcute:refresh" />
+          </button>
+        </div>
+        <p className="hint active-rooms-hint">Live rooms with someone drawing or browsing.</p>
+        {roomDirectoryStatus === "loading" && activeRooms.length === 0 && (
+          <p className="room-directory-message" role="status">Looking for live rooms…</p>
+        )}
+        {roomDirectoryStatus === "ready" && activeRooms.length === 0 && (
+          <p className="room-directory-message">No live rooms yet. Create one above.</p>
+        )}
+        {roomDirectoryError && (
+          <p className="room-directory-message error" role="alert">{roomDirectoryError}</p>
+        )}
+        {activeRooms.length > 0 && (
+          <div className="active-room-list">
+            {activeRooms.map((room) => (
+              <button
+                className={room.roomId === roomId ? "active-room-row current" : "active-room-row"}
+                type="button"
+                key={room.roomId}
+                onClick={() => joinListedRoom(room.roomId)}
+                title={`Join ${room.projectName}`}
+              >
+                <span className="active-room-dot" />
+                <span className="active-room-copy">
+                  <strong>{room.projectName}</strong>
+                  <code>{room.roomId}</code>
+                </span>
+                <span className="active-room-meta">
+                  {room.participantCount} {room.participantCount === 1 ? "person" : "people"}
+                  <small>{room.roomId === roomId ? "here" : "join"}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="room-form">
         <label className="field">
@@ -124,7 +198,7 @@ export function RoomPanel() {
             <code>{roomId}</code>
           </div>
           <p className="hint">
-            Everyone in this room sees edits, cursors, and Pixel Bot actions as they happen.
+            Live edits and cursors are shared here.
           </p>
           <label className="field follow-row">
             <input
@@ -132,14 +206,14 @@ export function RoomPanel() {
               checked={followAgent}
               onChange={(event) => setFollowAgent(event.target.checked)}
             />
-            <span>Follow Pixel Bot's view while it draws</span>
+            <span>Follow Pixel Bot</span>
           </label>
           <button className="text-btn danger" onClick={() => roomClient.joinRoom(null)}>Leave room</button>
         </div>
       )}
 
       <div className="room-people">
-        <h4>In the studio</h4>
+        <h4>People here</h4>
         <div className="people-list">
           <div className="person-row self">
             <span className="person-avatar" style={{ background: "#4daa91" }}><Icon icon="mingcute:group" /></span>
@@ -171,8 +245,7 @@ export function RoomPanel() {
 
       {!roomHost && (
         <p className="hint room-server-note">
-          Local cursor mode is on. Start the room server with <code>npm run room:dev</code>, then set
-          <code>VITE_PARTY_HOST=http://127.0.0.1:1999</code> for shared rooms.
+          Room server off — edits stay local.
         </p>
       )}
       {roomSyncBlocked && (

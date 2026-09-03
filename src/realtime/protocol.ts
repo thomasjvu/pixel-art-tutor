@@ -58,6 +58,14 @@ export interface RoomPresence {
   preview: PreviewCell[];
 }
 
+/** Public, lightweight directory entry for a room with live collaborators. */
+export interface ActiveRoomListing {
+  roomId: string;
+  projectName: string;
+  participantCount: number;
+  updatedAt: number;
+}
+
 export type RoomOperationKind = "edit" | "undo" | "redo";
 /**
  * Request errors affect only the identified operation. Room errors make the
@@ -92,6 +100,7 @@ export interface RoomPresenceMessage {
 
 export interface RoomPixelPatch {
   spriteId: string;
+  layerId?: string;
   frameIndex: number;
   x: number;
   y: number;
@@ -206,6 +215,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function isActiveRoomListing(value: unknown): value is ActiveRoomListing {
+  return (
+    isRecord(value) &&
+    typeof value.roomId === "string" &&
+    value.roomId.length > 0 &&
+    value.roomId.length <= 48 &&
+    typeof value.projectName === "string" &&
+    value.projectName.length > 0 &&
+    value.projectName.length <= 64 &&
+    typeof value.participantCount === "number" &&
+    Number.isInteger(value.participantCount) &&
+    value.participantCount > 0 &&
+    value.participantCount <= 16 &&
+    typeof value.updatedAt === "number" &&
+    Number.isFinite(value.updatedAt)
+  );
+}
+
 function isPresence(value: unknown): value is RoomPresence {
   if (!isRecord(value)) return false;
   const cursor = value.cursor;
@@ -270,6 +297,8 @@ function isRoomPixelPatch(value: unknown): value is RoomPixelPatch {
     typeof value.spriteId === "string" &&
     value.spriteId.length > 0 &&
     value.spriteId.length <= MAX_ID_LENGTH &&
+    (value.layerId === undefined ||
+      (typeof value.layerId === "string" && value.layerId.length > 0 && value.layerId.length <= MAX_ID_LENGTH)) &&
     typeof value.frameIndex === "number" &&
     Number.isInteger(value.frameIndex) &&
     value.frameIndex >= 0 &&
@@ -411,9 +440,23 @@ export function cloneProject(project: Project): Project {
     schemaVersion: 1,
     name: project.name,
     palette: [...project.palette],
+    paletteAlpha: project.paletteAlpha ? [...project.paletteAlpha] : undefined,
     sprites: project.sprites.map((sprite) => ({
       ...sprite,
-      frames: sprite.frames.map((frame) => ({ id: frame.id, pixels: [...frame.pixels] })),
+      frames: sprite.frames.map((frame) => ({
+        id: frame.id,
+        pixels: [...frame.pixels],
+        ...(frame.linkId ? { linkId: frame.linkId } : {}),
+      })),
+      layers: sprite.layers?.map((layer) => ({
+        ...layer,
+        frames: layer.frames.map((frame) => ({
+          id: frame.id,
+          pixels: [...frame.pixels],
+          ...(frame.linkId ? { linkId: frame.linkId } : {}),
+        })),
+      })),
+      frameTags: sprite.frameTags?.map((tag) => ({ ...tag })),
     })),
     tilemap: project.tilemap
       ? { ...project.tilemap, cells: [...project.tilemap.cells] }
@@ -479,12 +522,27 @@ function cloneSpriteWithPalette(sprite: Sprite, indexMap: PaletteIndexMap): Spri
       if (mapped === null) return null;
       pixels.push(mapped);
     }
-    frames.push({ id: frame.id, pixels });
+    frames.push({ id: frame.id, pixels, ...(frame.linkId ? { linkId: frame.linkId } : {}) });
   }
-  return { ...sprite, frames };
+  const layers: Sprite["layers"] = [];
+  for (const layer of sprite.layers ?? []) {
+    const layerFrames: Frame[] = [];
+    for (const frame of layer.frames) {
+      const pixels: number[] = [];
+      for (const pixel of frame.pixels) {
+        const mapped = remapPixel(pixel, indexMap);
+        if (mapped === null) return null;
+        pixels.push(mapped);
+      }
+      layerFrames.push({ id: frame.id, pixels, ...(frame.linkId ? { linkId: frame.linkId } : {}) });
+    }
+    layers.push({ ...layer, frames: layerFrames });
+  }
+  return { ...sprite, frames, layers, frameTags: sprite.frameTags?.map((tag) => ({ ...tag })) };
 }
 
 function sameSpriteShape(a: Sprite, b: Sprite): boolean {
+  if (a.layers || b.layers || a.frameTags || b.frameTags) return false;
   return (
     a.id === b.id &&
     a.width === b.width &&
