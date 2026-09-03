@@ -22,6 +22,7 @@ This is genuine human-agent collaboration: shared state, shared tools, one canva
 - **Co-creation**: the agent reads the sprite as ASCII rows (`read_sprite`), paints pixels
   (`set_pixels`, `fill_region`), applies transforms (`transform_sprite`: flips, rotate, shift,
   outline), remaps colors, and manages animation frames — while you keep drawing beside it.
+  Humans get a Select tool (V): marquee, drag to move, arrows nudge, Delete clears, Esc drops.
 - **Human-in-the-loop forms**: the "New sprite" form is also a **declarative WebMCP tool**
   (`request_new_sprite`). An agent can prefill it; you keep the final click. Both WebMCP APIs,
   one app.
@@ -35,6 +36,7 @@ This is genuine human-agent collaboration: shared state, shared tools, one canva
   alongside the sheet.
 - **Live rooms**: open the Room panel to create a shareable room. People see each other's pixel
   cursors, and Pixel Bot's animated drawing cursor follows WebMCP actions in real time.
+  Tick “Follow Pixel Bot's view” and your editor jumps to whatever the agent is drawing.
 - Share links (`#p=…` permalinks) let anyone open a co-created project with one click.
 
 ## The WebMCP implementation
@@ -50,7 +52,7 @@ await document.modelContext.registerTool({
 });
 ```
 
-### Tool catalog (21 tools)
+### Tool catalog (30 tools)
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -60,6 +62,15 @@ await document.modelContext.registerTool({
 | `get_tilemap` | read-only | Map grid as ASCII + tile legend |
 | `ensure_tilemap` | write | Create/resize the tilemap (clamped 2–64) |
 | `export_project` | read-only | Full project JSON |
+| `new_canvas` | write | Fresh blank 64×64 canvas (with confirmation) |
+| `rename_project` | write | Rename the project |
+| `save_project` | write | Save named project to the library |
+| `open_project` | write | Open a saved project (with confirmation) |
+| `save_palette` | write | Save named palette to the library |
+| `apply_palette` | write | Merge a saved palette (non-destructive) |
+| `start_tutorial` | write | Open the shared guided-tour overlay at a step |
+| `tutorial_goto` | write | Jump the shared guided tour to a step |
+| `end_tutorial` | write | Close the guided-tour overlay |
 | `import_project` | write | Replace the current project from JSON |
 | `set_pixels` | write | Batch pixel painting (hex / palette index / transparent) |
 | `fill_region` | write | Rectangle fill |
@@ -92,7 +103,7 @@ Design notes:
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:3000
 ```
 
 The app is fully functional standalone. To give an agent access:

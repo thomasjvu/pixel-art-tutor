@@ -113,8 +113,26 @@ function presenceValue(value: unknown, fallback: RoomPresence): RoomPresence | n
         ? Math.max(0, Math.min(1, candidate.progress))
         : fallback.progress,
     message: text(candidate.message, fallback.message, 96),
+    tutorialStep:
+      typeof candidate.tutorialStep === "number" && Number.isInteger(candidate.tutorialStep)
+        ? Math.max(0, Math.min(64, candidate.tutorialStep))
+        : null,
+    preview: previewCells(candidate.preview),
     updatedAt: Date.now(),
   };
+}
+
+function previewCells(value: unknown): RoomPresence["preview"] {
+  if (!Array.isArray(value)) return [];
+  const out: RoomPresence["preview"] = [];
+  for (const cell of value.slice(-300)) {
+    if (!cell || typeof cell !== "object") continue;
+    const { x, y, color } = cell as Record<string, unknown>;
+    if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
+    if (color !== null && !(typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color))) continue;
+    out.push({ x: x as number, y: y as number, color: color as string | null });
+  }
+  return out;
 }
 
 function operationId(prefix: string): string {
@@ -230,6 +248,8 @@ export class PixelRoom extends Server<RoomEnv> {
       cursor: null,
       progress: 0,
       message: "Joining the studio",
+      tutorialStep: null,
+      preview: [],
       updatedAt: Date.now(),
     };
     connection.setState({

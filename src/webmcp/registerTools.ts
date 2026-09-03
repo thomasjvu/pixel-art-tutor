@@ -4,9 +4,10 @@ import type { PixelChange } from "../types";
 import { TRANSPARENT } from "../types";
 import { normalizeHex } from "../engine/color";
 import { critiqueSprite } from "../engine/critique";
+import { clampTutorialStep, TUTORIAL_STEPS } from "../engine/tutorial";
 import { PIXEL_SYMBOLS, pixelsToRowsWithWidth } from "../engine/pixels";
 import { animateAgentPixels, beginAgentAction, finishAgentAction, showAgentAction } from "../realtime/agentAnimation";
-import { MAX_PROJECT_JSON_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
+import { MAX_PROJECT_JSON_LENGTH, MAX_PROJECT_NAME_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
 
 function log(tool: string, summary: string) {
   useUi.getState().pushLog({ tool, summary, source: "agent" });
@@ -116,6 +117,8 @@ export function registerTutorTools(): AbortController {
                   .map((sp) => ({ id: sp.id, name: sp.name })),
               }
             : null,
+          savedProjects: s.listProjectSaves(),
+          savedPalettes: s.listPaletteSaves(),
         };
       },
     }),
@@ -648,8 +651,8 @@ export function registerTutorTools(): AbortController {
         type: "object",
         properties: {
           name: { type: "string", maxLength: MAX_SPRITE_NAME_LENGTH },
-          width: { type: "number", description: "1-64, typically 16 or 32" },
-          height: { type: "number", description: "1-64, typically 16 or 32" },
+          width: { type: "number", description: "1-64, typically 16, 32 or 64" },
+          height: { type: "number", description: "1-64, typically 16, 32 or 64" },
           kind: {
             type: "string",
             enum: ["character", "item", "tile"],
@@ -898,6 +901,232 @@ export function registerTutorTools(): AbortController {
         return result.ok
           ? { ok: true }
           : { ok: false, error: result.error };
+      },
+    }),
+    defineTool<{ confirm: boolean }>({
+      name: "new_canvas",
+      title: "New blank canvas",
+      description:
+        "Replace the current project with a fresh blank 64x64 canvas (one empty character sprite, default palette, no tilemap). Requires confirm:true. The human sees the blank canvas immediately; use this to start a new drawing together.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          confirm: { type: "boolean", description: "Must be true to clear the current project" },
+        },
+        required: ["confirm"],
+      },
+      execute: async ({ confirm }) => {
+        if (confirm !== true) return { ok: false, error: "starting a new canvas requires confirm:true" };
+        const actionId = beginAgentAction({
+          tool: "new_canvas",
+          spriteId: null,
+          frameIndex: 0,
+          message: "Starting a fresh blank canvas",
+          status: "thinking",
+        });
+        await showAgentAction(actionId);
+        interruptHumanStroke();
+        useStore.getState().resetProject("blank");
+        const after = useStore.getState().activeSprite();
+        finishAgentAction(actionId, after ? `Fresh ${after.width}x${after.height} canvas ready` : "Fresh canvas ready");
+        log("new_canvas", "started blank canvas");
+        return { ok: true, spriteId: after?.id ?? null, size: after ? `${after.width}x${after.height}` : null };
+      },
+    }),
+
+    defineTool<{ step?: number }>({
+      name: "start_tutorial",
+      title: "Start guided tutorial",
+      description:
+        "Open the step-by-step guided tour overlay (shared with the room, so following humans see the same step) and jump to a step. Use it to walk the human through the whole app, then guide them to a first project together with your drawing tools.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          step: { type: "number", description: "Zero-based step index. Defaults to 0 (the beginning)." },
+        },
+      },
+      execute: async ({ step }) => {
+        const at = clampTutorialStep(step ?? 0);
+        const actionId = beginAgentAction({
+          tool: "start_tutorial",
+          spriteId: null,
+          frameIndex: 0,
+          message: `Guiding the tour: step ${at + 1} of ${TUTORIAL_STEPS.length}`,
+          status: "thinking",
+        });
+        await showAgentAction(actionId);
+        useUi.getState().openTutorial(at);
+        finishAgentAction(actionId, `Tutorial open at step ${at + 1}`);
+        log("start_tutorial", `step ${at + 1}/${TUTORIAL_STEPS.length}`);
+        return {
+          ok: true,
+          step: at,
+          totalSteps: TUTORIAL_STEPS.length,
+          title: TUTORIAL_STEPS[at].title,
+          body: TUTORIAL_STEPS[at].body,
+        };
+      },
+    }),
+
+    defineTool<{ step: number }>({
+      name: "tutorial_goto",
+      title: "Go to tutorial step",
+      description:
+        "Jump the shared guided-tour overlay to a given step (0-based). Pair each step with a live demo using your drawing tools.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          step: { type: "number", description: "Zero-based step index" },
+        },
+        required: ["step"],
+      },
+      execute: async ({ step }) => {
+        const at = clampTutorialStep(step);
+        const actionId = beginAgentAction({
+          tool: "tutorial_goto",
+          spriteId: null,
+          frameIndex: 0,
+          message: `Guiding the tour: step ${at + 1} of ${TUTORIAL_STEPS.length}`,
+          status: "thinking",
+        });
+        await showAgentAction(actionId);
+        useUi.getState().setTutorialStep(at);
+        finishAgentAction(actionId, `Tutorial at step ${at + 1}`);
+        log("tutorial_goto", `step ${at + 1}/${TUTORIAL_STEPS.length}`);
+        return {
+          ok: true,
+          step: at,
+          totalSteps: TUTORIAL_STEPS.length,
+          title: TUTORIAL_STEPS[at].title,
+          body: TUTORIAL_STEPS[at].body,
+        };
+      },
+    }),
+
+    defineTool({
+      name: "end_tutorial",
+      title: "End guided tutorial",
+      description:
+        "Close the shared guided-tour overlay on this window (following humans keep their own copy until they close it). Call it when the tour is done so it never pops back up.",
+      inputSchema: { type: "object", properties: {} },
+      execute: async () => {
+        const actionId = beginAgentAction({
+          tool: "end_tutorial",
+          spriteId: null,
+          frameIndex: 0,
+          message: "Wrapping up the tour",
+          status: "thinking",
+        });
+        await showAgentAction(actionId);
+        useUi.getState().closeTutorial();
+        finishAgentAction(actionId, "Tutorial closed");
+        log("end_tutorial", "closed");
+        return { ok: true };
+      },
+    }),
+
+    defineTool<{ name: string }>({
+      name: "rename_project",
+      title: "Rename project",
+      description:
+        "Rename the current project (e.g. 'guided-tutorial-01' when starting a tutorial piece). The human sees the new title immediately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", maxLength: MAX_PROJECT_NAME_LENGTH, description: "New project name (non-empty)" },
+        },
+        required: ["name"],
+      },
+      execute: ({ name }) => {
+        const nextName = typeof name === "string" ? name.trim().slice(0, MAX_PROJECT_NAME_LENGTH) : "";
+        if (!nextName) return { ok: false, error: "name must be a non-empty string" };
+        interruptHumanStroke();
+        useStore.getState().renameProject(nextName);
+        log("rename_project", nextName);
+        return { ok: true, name: nextName };
+      },
+    }),
+
+    defineTool<{ name?: string }>({
+      name: "save_project",      title: "Save named project",
+      description:
+        "Save the current project into the on-device library under a name (defaults to the project name), so it can be reopened later with open_project. Saved names are listed in get_project_state.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Slot name, e.g. 'guided-tutorial-01'. Defaults to the project name." },
+        },
+      },
+      execute: ({ name }) => {
+        interruptHumanStroke();
+        const result = useStore.getState().saveProjectAs(name);
+        log("save_project", result.ok ? `saved '${result.name}'` : "save failed");
+        return result.ok
+          ? { ok: true, name: result.name, savedProjects: useStore.getState().listProjectSaves() }
+          : { ok: false, error: result.error };
+      },
+    }),
+
+    defineTool<{ name: string; confirm: boolean }>({
+      name: "open_project",
+      title: "Open saved project",
+      description:
+        "Replace the current project with a saved one from the on-device library. Requires confirm:true. The human sees the opened project immediately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Saved project name" },
+          confirm: { type: "boolean", description: "Must be true to replace the current project" },
+        },
+        required: ["name", "confirm"],
+      },
+      execute: ({ name, confirm }) => {
+        if (confirm !== true) return { ok: false, error: "opening a saved project requires confirm:true" };
+        interruptHumanStroke();
+        const result = useStore.getState().openProjectSave(name);
+        log("open_project", result.ok ? `opened '${name}'` : "open failed");
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      },
+    }),
+
+    defineTool<{ name?: string }>({
+      name: "save_palette",
+      title: "Save named palette",
+      description:
+        "Save the current shared palette into the on-device library under a name, so it can be merged into any project later with apply_palette. Saved names are listed in get_project_state.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Slot name. Defaults to '<project> palette'." },
+        },
+      },
+      execute: ({ name }) => {
+        interruptHumanStroke();
+        const result = useStore.getState().savePaletteAs(name);
+        log("save_palette", result.ok ? `saved '${result.name}'` : "save failed");
+        return result.ok
+          ? { ok: true, name: result.name, savedPalettes: useStore.getState().listPaletteSaves() }
+          : { ok: false, error: result.error };
+      },
+    }),
+
+    defineTool<{ name: string }>({
+      name: "apply_palette",
+      title: "Apply saved palette",
+      description:
+        "Merge a saved palette into the current project: missing colors are appended (up to 64), existing indices never move so artwork is untouched. Reports how many colors were added.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Saved palette name" },
+        },
+        required: ["name"],
+      },
+      execute: ({ name }) => {
+        interruptHumanStroke();
+        const result = useStore.getState().applyPaletteSave(name);
+        log("apply_palette", result.ok ? `added ${result.added} colors` : "apply failed");
+        return result.ok ? { ok: true, added: result.added } : { ok: false, error: result.error };
       },
     }),
   ];

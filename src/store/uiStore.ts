@@ -1,5 +1,16 @@
 import { create } from "zustand";
 import type { PixelPoint, PresenceStatus, RoomPresence } from "../realtime/protocol";
+import { clampTutorialStep } from "../engine/tutorial";
+
+const ACT_AS_AGENT_KEY = "pixel-art-tutor.act-as-agent.v1";
+
+function storedActAsAgent(): boolean {
+  try {
+    return localStorage.getItem(ACT_AS_AGENT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export interface ToolLogEntry {
   id: string;
@@ -23,6 +34,16 @@ export interface AgentPreviewPixel {
   x: number;
   y: number;
   color: string | null;
+}
+
+export interface AgentActivityEntry {
+  peerId: string;
+  name: string;
+  tool: string;
+  message: string;
+  status: PresenceStatus;
+  progress: number;
+  at: number;
 }
 
 export interface AgentPresenceState {
@@ -55,6 +76,18 @@ interface UiState {
   roomCanUndo: boolean;
   roomCanRedo: boolean;
   roomSyncBlocked: boolean;
+  followAgent: boolean;
+  setFollowAgent(follow: boolean): void;
+  tutorialOpen: boolean;
+  tutorialStep: number;
+  openTutorial(step?: number): void;
+  closeTutorial(): void;
+  setTutorialStep(step: number): void;
+  agentActivity: AgentActivityEntry[];
+  noteAgentActivity(peers: RoomPresence[]): void;
+  /** When true this window presents as kind "agent" even while idle. */
+  actAsAgent: boolean;
+  setActAsAgent(act: boolean): void;
   setMcp(status: McpStatus, error?: string | null): void;
   setTools(tools: { name: string; description: string }[]): void;
   pushLog(entry: Omit<ToolLogEntry, "id" | "time">): void;
@@ -93,6 +126,46 @@ export const useUi = create<UiState>()((set) => ({
   roomCanUndo: false,
   roomCanRedo: false,
   roomSyncBlocked: false,
+  followAgent: true,
+  setFollowAgent: (followAgent) => set({ followAgent }),
+  tutorialOpen: false,
+  tutorialStep: 0,
+  openTutorial: (step = 0) => set({ tutorialOpen: true, tutorialStep: clampTutorialStep(step) }),
+  closeTutorial: () => set({ tutorialOpen: false }),
+  setTutorialStep: (tutorialStep) => set({ tutorialStep: clampTutorialStep(tutorialStep), tutorialOpen: true }),
+  agentActivity: [],
+  noteAgentActivity: (peers) =>
+    set((state) => {
+      const now = Date.now();
+      const next = [...state.agentActivity];
+      for (const peer of peers) {
+        const key = `${peer.id} ${peer.tool} ${peer.message}`;
+        const existing = next.findIndex(
+          (entry) => `${entry.peerId} ${entry.tool} ${entry.message}` === key,
+        );
+        const entry: AgentActivityEntry = {
+          peerId: peer.id,
+          name: peer.name,
+          tool: peer.tool,
+          message: peer.message,
+          status: peer.status,
+          progress: peer.progress,
+          at: now,
+        };
+        if (existing >= 0) next[existing] = entry;
+        else next.unshift(entry);
+      }
+      return { agentActivity: next.slice(0, 10) };
+    }),
+  actAsAgent: storedActAsAgent(),
+  setActAsAgent: (actAsAgent) => {
+    try {
+      localStorage.setItem(ACT_AS_AGENT_KEY, actAsAgent ? "1" : "0");
+    } catch {
+      /* localStorage may be unavailable in a private or embedded browser */
+    }
+    set({ actAsAgent });
+  },
   setMcp: (status, error = null) => set({ mcpStatus: status, mcpError: error }),
   setTools: (tools) => set({ registeredTools: tools }),
   pushLog: (entry) =>

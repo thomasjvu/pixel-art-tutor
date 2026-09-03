@@ -117,6 +117,8 @@ function presenceFor(
     cursor: null,
     progress: 0,
     message: "Browsing the studio",
+    tutorialStep: null,
+    preview: [],
     updatedAt: Date.now(),
   };
 }

@@ -164,23 +164,26 @@ export function createStarterProject(): Project {
   };
 }
 
+export const BLANK_CANVAS_SIZE = 64;
+
 export function blankProject(): Project {
-  const hero: Sprite = {
-    id: "sprite-hero",
-    name: "Hero",
-    width: 16,
-    height: 16,
+  const size = BLANK_CANVAS_SIZE;
+  const canvas: Sprite = {
+    id: "sprite-canvas",
+    name: "Canvas",
+    width: size,
+    height: size,
     kind: "character",
     frames: [
-      { id: "sprite-hero-f0", pixels: new Array(256).fill(-1) },
-      { id: "sprite-hero-f1", pixels: new Array(256).fill(-1) },
+      { id: "sprite-canvas-f0", pixels: new Array(size * size).fill(-1) },
+      { id: "sprite-canvas-f1", pixels: new Array(size * size).fill(-1) },
     ],
   };
   return {
     schemaVersion: 1,
     name: "Untitled",
     palette: [...DEFAULT_PALETTE],
-    sprites: [hero],
+    sprites: [canvas],
     tilemap: null,
   };
 }

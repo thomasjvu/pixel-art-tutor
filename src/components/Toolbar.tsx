@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Icon } from "./Icon";
 import { useEditor } from "../store/editorStore";
 import { useStore } from "../store/projectStore";
@@ -10,12 +11,14 @@ const TOOLS: { id: ToolName; icon: string; label: string; key: string }[] = [
   { id: "eraser", icon: "mingcute:eraser", label: "Eraser", key: "E" },
   { id: "fill", icon: "mingcute:bucket", label: "Fill", key: "G" },
   { id: "picker", icon: "mingcute:eye", label: "Pick", key: "I" },
+  { id: "select", icon: "mingcute:cursor", label: "Select", key: "V" },
 ];
 
 export function Toolbar() {
   const tool = useEditor((s) => s.tool);
   const setTool = useEditor((s) => s.setTool);
   const colorIdx = useEditor((s) => s.colorIdx);
+  const setColor = useEditor((s) => s.setColor);
   const zoom = useEditor((s) => s.zoom);
   const setZoom = useEditor((s) => s.setZoom);
   const showGrid = useEditor((s) => s.showGrid);
@@ -30,10 +33,27 @@ export function Toolbar() {
   const roomCanUndo = useUi((s) => s.roomCanUndo);
   const roomCanRedo = useUi((s) => s.roomCanRedo);
   const sharedRoom = roomStatus === "connected";
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const currentHex = /^#[0-9a-f]{6}$/i.test(palette[colorIdx] ?? "") ? (palette[colorIdx] as string) : "#38b764";
+
+  function pickCustomColor(hex: string) {
+    const result = useStore.getState().addPaletteColor(hex);
+    if ("index" in result) setColor(result.index);
+  }
 
   return (
     <aside className="toolbar" aria-label="Pixel tools">
-      <span className="toolbar-label">Tools</span>
+      <span className="toolbar-label-row">
+        <span className="toolbar-label">Tools</span>
+        <button
+          className="rail-hide"
+          onClick={() => useEditor.getState().setToolbarOpen(false)}
+          title="Hide toolbar"
+          aria-label="Hide toolbar"
+        >
+          «
+        </button>
+      </span>
       <div className="tool-grid">
         {TOOLS.map((item) => (
           <button
@@ -83,14 +103,29 @@ export function Toolbar() {
         </button>
       </div>
 
-      <div className="toolbar-colors" title="Selected color">
+      <button
+        className="toolbar-colors picker"
+        title="Pick a custom color (adds it to the palette)"
+        aria-label="Pick a custom color"
+        onClick={() => colorInputRef.current?.click()}
+      >
         <span className="color-back" />
         <span
           className="color-front"
           style={{ background: palette[colorIdx] ?? "#38b764" }}
         />
         <span className="color-index">{String(colorIdx).padStart(2, "0")}</span>
-      </div>
+        <input
+          ref={colorInputRef}
+          type="color"
+          hidden
+          value={currentHex}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => pickCustomColor(e.target.value)}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+      </button>
 
       <div className="toolbar-spacer" />
 

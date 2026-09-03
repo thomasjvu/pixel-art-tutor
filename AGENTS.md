@@ -3,7 +3,7 @@
 ## What this is
 
 A WebMCP pixel-art studio: humans and AI agents co-edit one canvas in real time.
-The agent surface is 21 imperative tools registered in `src/webmcp/registerTools.ts`, plus
+The agent surface is 30 imperative tools registered in `src/webmcp/registerTools.ts`, plus
 1 declarative form tool in `src/components/SpritesPanel.tsx`.
 
 ## Commands
@@ -22,7 +22,7 @@ Run lint + typecheck + build before declaring any change done.
 - `src/engine/` — pure pixel/color/critique logic (no DOM, no store imports).
 - `src/store/` — zustand stores: `projectStore` is the single source of truth
   for project data; `editorStore`/`uiStore` hold UI state.
-- `src/webmcp/registerTools.ts` — the 21 agent tools. Single file by design;
+- `src/webmcp/registerTools.ts` — the 30 agent tools. Single file by design;
   it is the app's showcase.
 - `src/components/` — React UI.
 

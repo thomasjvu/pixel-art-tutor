@@ -13,6 +13,7 @@ import { ProjectMenu } from "./components/ProjectMenu";
 import { StatusBar } from "./components/StatusBar";
 import { RoomBridge } from "./components/RoomBridge";
 import { RoomPanel } from "./components/RoomPanel";
+import { TutorialOverlay } from "./components/TutorialOverlay";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { decodeProjectFromHashParam } from "./engine/share";
 import { downloadText, spriteFileStem } from "./engine/exportImage";
@@ -43,6 +44,8 @@ function AppContent() {
   const projectName = useStore((s) => s.project.name);
   const spriteCount = useStore((s) => s.project.sprites.length);
   const renameProject = useStore((s) => s.renameProject);
+  const toolbarOpen = useEditor((s) => s.toolbarOpen);
+  const sidebarOpen = useEditor((s) => s.sidebarOpen);
   const hydratedShareParam = useRef<string | null>(null);
 
   useEffect(() => {
@@ -107,13 +110,53 @@ function AppContent() {
         case "e": editor.setTool("eraser"); break;
         case "g": editor.setTool("fill"); break;
         case "i": editor.setTool("picker"); break;
+        case "v": editor.setTool("select"); break;
+        case "escape": {
+          if (editor.selection) {
+            editor.setSelection(null);
+            break;
+          }
+          return;
+        }
+        case "delete":
+        case "backspace": {
+          const sel = editor.selection;
+          if (sel) {
+            event.preventDefault();
+            useStore.getState().fillRegion(sel.x, sel.y, sel.width, sel.height, null, sel.spriteId, sel.frameIndex, false);
+          }
+          return;
+        }
         case "arrowleft":
-          useStore.getState().selectFrame(Math.max(0, useStore.getState().activeFrameIndex - 1));
-          break;
-        case "arrowright": {
-          const state = useStore.getState();
-          const sprite = state.activeSprite();
-          if (sprite) state.selectFrame(Math.min(sprite.frames.length - 1, state.activeFrameIndex + 1));
+        case "arrowright":
+        case "arrowup":
+        case "arrowdown": {
+          const sel = editor.tool === "select" ? editor.selection : null;
+          if (sel) {
+            event.preventDefault();
+            const step = event.shiftKey ? 8 : 1;
+            const dx = key === "arrowleft" ? -step : key === "arrowright" ? step : 0;
+            const dy = key === "arrowup" ? -step : key === "arrowdown" ? step : 0;
+            const store = useStore.getState();
+            const sprite = store.project.sprites.find((s) => s.id === sel.spriteId);
+            if (sprite && store.movePixels(sel, dx, dy) >= 0) {
+              editor.setSelection({
+                ...sel,
+                x: Math.max(0, Math.min(sprite.width - sel.width, sel.x + dx)),
+                y: Math.max(0, Math.min(sprite.height - sel.height, sel.y + dy)),
+              });
+            }
+            return;
+          }
+          if (key === "arrowleft") {
+            useStore.getState().selectFrame(Math.max(0, useStore.getState().activeFrameIndex - 1));
+            break;
+          }
+          if (key === "arrowright") {
+            const state = useStore.getState();
+            const sprite = state.activeSprite();
+            if (sprite) state.selectFrame(Math.min(sprite.frames.length - 1, state.activeFrameIndex + 1));
+          }
           break;
         }
         case "+":
@@ -201,16 +244,36 @@ function AppContent() {
       <ProjectMenu />
 
       <main className="workspace">
-        <Toolbar />
+        {!toolbarOpen ? (
+          <button
+            className="rail-tab"
+            onClick={() => useEditor.getState().setToolbarOpen(true)}
+            title="Show tools"
+            aria-label="Show tools"
+          >
+            »
+          </button>
+        ) : (
+          <Toolbar />
+        )}
         <section className="editor-column">
           <CanvasStage />
           <TimelinePanel />
         </section>
+        {sidebarOpen ? (
         <aside className="sidebar">
           <div className="sidebar-heading">
             <div>
               <strong>Inspector</strong>
             </div>
+            <button
+              className="rail-hide"
+              onClick={() => useEditor.getState().setSidebarOpen(false)}
+              title="Hide inspector"
+              aria-label="Hide inspector"
+            >
+              »
+            </button>
             <span className="dock-grip" aria-hidden="true"><Icon icon="mingcute:more-2" /></span>
           </div>
           <nav className="tabs" role="tablist" aria-label="Studio panels">
@@ -261,9 +324,20 @@ function AppContent() {
             <span>made for tiny worlds</span>
           </div>
         </aside>
+        ) : (
+          <button
+            className="rail-tab"
+            onClick={() => useEditor.getState().setSidebarOpen(true)}
+            title="Show inspector"
+            aria-label="Show inspector"
+          >
+            «
+          </button>
+        )}
       </main>
 
       <StatusBar />
+      <TutorialOverlay />
     </div>
   );
 }

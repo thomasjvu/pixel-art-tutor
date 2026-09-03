@@ -30,6 +30,10 @@ export function RoomPanel() {
   const roomPeers = useUi((state) => state.roomPeers);
   const peers = Object.values(roomPeers);
   const roomHost = useUi((state) => state.roomHost);
+  const followAgent = useUi((state) => state.followAgent);
+  const setFollowAgent = useUi((state) => state.setFollowAgent);
+  const actAsAgent = useUi((state) => state.actAsAgent);
+  const setActAsAgent = useUi((state) => state.setActAsAgent);
   const displayName = useUi((state) => state.roomDisplayName);
   const [roomDraft, setRoomDraft] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
@@ -97,6 +101,14 @@ export function RoomPanel() {
             placeholder="tiny-world"
           />
         </label>
+        <label className="field follow-row" title="Show this window as an agent (Pixel Bot) to everyone in the room, even while idle.">
+          <input
+            type="checkbox"
+            checked={actAsAgent}
+            onChange={(event) => setActAsAgent(event.target.checked)}
+          />
+          <span>I'm an agent (Pixel Bot)</span>
+        </label>
         <div className="panel-row room-actions">
           <button className="primary-btn" onClick={join}>
             {roomStatus === "connected" ? "Switch room" : "Join room"}
@@ -114,6 +126,14 @@ export function RoomPanel() {
           <p className="hint">
             Everyone in this room sees edits, cursors, and Pixel Bot actions as they happen.
           </p>
+          <label className="field follow-row">
+            <input
+              type="checkbox"
+              checked={followAgent}
+              onChange={(event) => setFollowAgent(event.target.checked)}
+            />
+            <span>Follow Pixel Bot's view while it draws</span>
+          </label>
           <button className="text-btn danger" onClick={() => roomClient.joinRoom(null)}>Leave room</button>
         </div>
       )}
@@ -127,12 +147,23 @@ export function RoomPanel() {
             <span className="person-state">you</span>
           </div>
           {peers.map((peer) => (
-            <div className="person-row" key={peer.id}>
+            <div className="person-row" key={peer.id} title={`${peer.name} · ${peer.kind} · ${peer.status} · ${peer.tool}: ${peer.message}`}>
               <span className="person-avatar" style={{ background: peer.color }}>
                 <Icon icon={peer.kind === "agent" ? "mingcute:bot" : "mingcute:group"} />
               </span>
-              <span className="person-name">{peer.name}</span>
-              <span className="person-state">{peer.status === "idle" ? "here" : peer.status}</span>
+              <span className="person-meta">
+                <span className="person-name">
+                  {peer.name}
+                  <span className={`kind-badge kind-${peer.kind}`}>{peer.kind === "agent" ? "AGENT" : "HUMAN"}</span>
+                </span>
+                <span className="person-detail">
+                  {peer.status === "idle" ? "browsing" : peer.status}
+                  {peer.tool && peer.status !== "idle" ? ` · ${peer.tool}` : ""}
+                  {peer.message && peer.status !== "idle" ? ` — ${peer.message}` : ""}
+                  {peer.status !== "idle" && peer.progress > 0 ? ` (${Math.round(peer.progress * 100)}%)` : ""}
+                </span>
+              </span>
+              <span className="person-state" style={{ background: peer.color }} />
             </div>
           ))}
         </div>

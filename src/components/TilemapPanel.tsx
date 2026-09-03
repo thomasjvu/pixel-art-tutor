@@ -34,7 +34,7 @@ export function TilemapPanel() {
       for (let x = 0; x < tm.cols; x++) {
         const id = tm.cells[y * tm.cols + x];
         // cell background
-        ctx.fillStyle = (x + y) % 2 === 0 ? "#e8e5dc" : "#d8d5cc";
+        ctx.fillStyle = (x + y) % 2 === 0 ? "#0b0b0b" : "#161616";
         ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
         if (!id) continue;
         const sprite = spriteById.get(id);

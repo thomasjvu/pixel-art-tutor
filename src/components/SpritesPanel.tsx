@@ -26,8 +26,8 @@ export function SpritesPanel() {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     const n = String(data.get("name") ?? "").trim() || "Untitled";
-    const w = Math.max(1, Math.min(64, Number(data.get("width")) || 16));
-    const h = Math.max(1, Math.min(64, Number(data.get("height")) || 16));
+    const w = Math.max(1, Math.min(64, Number(data.get("width")) || 64));
+    const h = Math.max(1, Math.min(64, Number(data.get("height")) || 64));
     const k = (String(data.get("kind")) || "character") as SpriteKind;
     useStore.getState().interruptStroke();
     const id = addSprite({ name: n, width: w, height: h, kind: k });
@@ -86,11 +86,11 @@ export function SpritesPanel() {
         <div className="panel-row">
           <label className="field">
             <span>Width</span>
-            <input name="width" type="number" min={1} max={64} defaultValue={16} list="common-sizes" toolparamdescription="Canvas width in pixels, typically 8, 16 or 32." />
+            <input name="width" type="number" min={1} max={64} defaultValue={64} list="common-sizes" toolparamdescription="Canvas width in pixels, typically 16, 32 or 64." />
           </label>
           <label className="field">
             <span>Height</span>
-            <input name="height" type="number" min={1} max={64} defaultValue={16} list="common-sizes" toolparamdescription="Canvas height in pixels, typically 8, 16 or 32." />
+            <input name="height" type="number" min={1} max={64} defaultValue={64} list="common-sizes" toolparamdescription="Canvas height in pixels, typically 16, 32 or 64." />
           </label>
           <datalist id="common-sizes">
             <option value="8" />
@@ -98,6 +98,7 @@ export function SpritesPanel() {
             <option value="24" />
             <option value="32" />
             <option value="48" />
+            <option value="64" />
           </datalist>
         </div>
         <div className="panel-row">
@@ -165,6 +166,79 @@ export function SpritesPanel() {
           </button>
         </div>
       </details>
+
+      <details className="io-details">
+        <summary>Saved projects</summary>
+        <ProjectLibrary />
+      </details>
+    </div>
+  );
+}
+
+function ProjectLibrary() {
+  const saveProjectAs = useStore((s) => s.saveProjectAs);
+  const openProjectSave = useStore((s) => s.openProjectSave);
+  const deleteProjectSave = useStore((s) => s.deleteProjectSave);
+  const listProjectSaves = useStore((s) => s.listProjectSaves);
+  const [draft, setDraft] = useState("");
+  const [saves, setSaves] = useState(() => listProjectSaves());
+  const refresh = () => setSaves(listProjectSaves());
+
+  function save() {
+    const result = saveProjectAs(draft.trim() ? draft : undefined);
+    if (!result.ok) {
+      alert(`Could not save project: ${result.error}`);
+      return;
+    }
+    setDraft("");
+    refresh();
+  }
+
+  function open(name: string) {
+    if (!window.confirm(`Open '${name}'? Your current project stays in undo history.`)) return;
+    const result = openProjectSave(name);
+    if (!result.ok) alert(`Could not open project: ${result.error}`);
+  }
+
+  return (
+    <div>
+      <div className="panel-row">
+        <input
+          className="text-input grow"
+          value={draft}
+          maxLength={64}
+          placeholder="guided-tutorial-01"
+          aria-label="Save name"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+          }}
+        />
+        <button className="text-btn" onClick={save}>
+          Save
+        </button>
+      </div>
+      {saves.length === 0 && <p className="hint">No saved projects yet — name one above.</p>}
+      <ul className="log-list">
+        {saves.map((s) => (
+          <li key={s.name}>
+            <button className="text-btn grow" onClick={() => open(s.name)} title={`Open '${s.name}'`}>
+              {s.name}
+            </button>
+            <button
+              className="icon-btn"
+              title={`Delete '${s.name}'`}
+              aria-label={`Delete saved project ${s.name}`}
+              onClick={() => {
+                deleteProjectSave(s.name);
+                refresh();
+              }}
+            >
+              <Icon icon="mingcute:close-circle" />
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

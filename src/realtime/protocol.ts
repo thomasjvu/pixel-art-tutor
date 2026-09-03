@@ -34,6 +34,11 @@ export interface PixelPoint {
   y: number;
 }
 
+/** One painted cell streamed live while an action is in progress. */
+export interface PreviewCell extends PixelPoint {
+  color: string | null;
+}
+
 export interface RoomPresence {
   id: string;
   name: string;
@@ -47,6 +52,10 @@ export interface RoomPresence {
   progress: number;
   message: string;
   updatedAt: number;
+  /** Guided-tour step the peer is viewing, or null when not touring. */
+  tutorialStep: number | null;
+  /** Live paint preview (capped); the committed pixels follow as an edit. */
+  preview: PreviewCell[];
 }
 
 export type RoomOperationKind = "edit" | "undo" | "redo";

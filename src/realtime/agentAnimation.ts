@@ -59,24 +59,13 @@ export function beginAgentAction(options: AgentActionOptions): string {
 export async function animateAgentPixels(actionId: string, cells: AgentPaintCell[]): Promise<void> {
   const ui = useUi.getState();
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Paint in ~160 steps so watchers see strokes land near one pixel at a
+  // time (small paints go literally pixel by pixel); the growing preview is
+  // streamed to the room with presence, so peers watch it happen live.
   const chunkSize = reducedMotion
     ? Math.max(1, cells.length)
-    : cells.length > 900
-      ? 32
-      : cells.length > 240
-        ? 8
-        : cells.length > 96
-          ? 4
-          : 2;
-  const delay = reducedMotion
-    ? 0
-    : cells.length > 900
-      ? 12
-      : cells.length > 240
-        ? 18
-        : cells.length > 96
-          ? 20
-          : 24;
+    : Math.max(1, Math.ceil(cells.length / 160));
+  const delay = reducedMotion ? 0 : 20;
   const preview: AgentPreviewPixel[] = [];
 
   for (let index = 0; index < cells.length; index += chunkSize) {

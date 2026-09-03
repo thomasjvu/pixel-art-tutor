@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Frame, PixelChange, Project, Sprite, SpriteKind } from "../types";
+import type { SelectionRect } from "./editorStore";
 import { TRANSPARENT } from "../types";
 import { normalizeHex, resolveColorInto } from "../engine/color";
 import {
@@ -47,6 +48,11 @@ export type TransformOp =
 const HISTORY_LIMIT = 60;
 const STORAGE_KEY = "pixel-art-tutor.project.v1";
 const STORAGE_RECOVERY_KEY = `${STORAGE_KEY}.recovery.v1`;
+const PROJECT_SAVES_KEY = "pixel-art-tutor.saved-projects.v1";
+const PALETTE_SAVES_KEY = "pixel-art-tutor.saved-palettes.v1";
+const MAX_SAVE_NAME_LENGTH = 64;
+const MAX_SAVED_PROJECTS = 24;
+const MAX_SAVED_PALETTES = 24;
 let storedRecoveryRaw: string | null = null;
 export type StorageStatus = "not_saved" | "pending" | "saved" | "unavailable" | "too_large";
 let initialStorageStatus: StorageStatus = "not_saved";
@@ -169,6 +175,58 @@ function isSpriteKind(value: unknown): value is SpriteKind {
   return value === "character" || value === "item" || value === "tile";
 }
 
+export interface SaveEntry {
+  name: string;
+  savedAt: number;
+}
+
+function cleanSaveName(name: unknown): string | null {
+  const next = typeof name === "string" ? name.trim().slice(0, MAX_SAVE_NAME_LENGTH) : "";
+  return next ? next : null;
+}
+
+function readSaveSlots(key: string): { name: string; savedAt: number; data: unknown }[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const slots: { name: string; savedAt: number; data: unknown }[] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") continue;
+      const { name, savedAt, data } = entry as Record<string, unknown>;
+      if (typeof name !== "string" || !name.trim() || typeof savedAt !== "number" || data === undefined) continue;
+      slots.push({ name: name.trim().slice(0, MAX_SAVE_NAME_LENGTH), savedAt, data });
+    }
+    return slots;
+  } catch {
+    return [];
+  }
+}
+
+function writeSaveSlots(key: string, slots: { name: string; savedAt: number; data: unknown }[]): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(slots));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readPaletteSlots(): { name: string; savedAt: number; colors: string[] }[] {
+  const slots: { name: string; savedAt: number; colors: string[] }[] = [];
+  for (const slot of readSaveSlots(PALETTE_SAVES_KEY)) {
+    if (!Array.isArray(slot.data)) continue;
+    const colors: string[] = [];
+    for (const hex of slot.data) {
+      const normalized = normalizeHex(hex);
+      if (normalized && !colors.includes(normalized)) colors.push(normalized);
+    }
+    if (colors.length > 0) slots.push({ name: slot.name, savedAt: slot.savedAt, colors });
+  }
+  return slots;
+}
+
 export interface ResolveTarget {
   sprite: Sprite;
   frameIndex: number;
@@ -211,6 +269,7 @@ interface ProjectState {
     frameIndex?: number,
   ): void | { error: string };
   clearFrame(spriteId?: string, frameIndex?: number): void;
+  movePixels(rect: SelectionRect, dx: number, dy: number): number;
   transform(op: TransformOp, opts: { dx?: number; dy?: number; color?: number | string | null; frameIndices?: number[]; spriteId?: string }): string | null;
   replaceColor(from: number | string | null, to: number | string | null, spriteId?: string): number | { error: string };
 
@@ -242,6 +301,14 @@ interface ProjectState {
   undo(): void;
   redo(): void;
   loadProject(p: unknown): { ok: true } | { ok: false; error: string };
+  listProjectSaves(): SaveEntry[];
+  saveProjectAs(name?: string): { ok: true; name: string } | { ok: false; error: string };
+  openProjectSave(name: string): { ok: true } | { ok: false; error: string };
+  deleteProjectSave(name: string): boolean;
+  listPaletteSaves(): SaveEntry[];
+  savePaletteAs(name?: string): { ok: true; name: string } | { ok: false; error: string };
+  applyPaletteSave(name: string): { ok: true; added: number } | { ok: false; error: string };
+  deletePaletteSave(name: string): boolean;
   applyRoomProject(p: Project): boolean;
   dismissStorageRecovery(): void;
   resetProject(kind: "starter" | "blank"): void;
@@ -336,7 +403,7 @@ export const useStore = create<ProjectState>()((set, get) => {
   }
 
   return {
-    project: loadStored() ?? createStarterProject(),
+    project: loadStored() ?? blankProject(),
     activeSpriteId: "",
     activeFrameIndex: 0,
     selectedTileId: null,
@@ -541,6 +608,52 @@ export const useStore = create<ProjectState>()((set, get) => {
       if (changedPixels.length > 0) {
         commit(next, undefined, "local", "Edit", cellHint(changedPixels));
       }
+    },
+
+    movePixels(rect, dx, dy) {
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return 0;
+      const ox = Math.round(dx);
+      const oy = Math.round(dy);
+      if (ox === 0 && oy === 0) return 0;
+      const { project } = get();
+      const sprite = project.sprites.find((s) => s.id === rect.spriteId);
+      const frame = sprite?.frames[rect.frameIndex];
+      if (!sprite || !frame) return 0;
+      const sx0 = Math.max(0, Math.round(rect.x));
+      const sy0 = Math.max(0, Math.round(rect.y));
+      const sx1 = Math.min(sprite.width, Math.round(rect.x + rect.width));
+      const sy1 = Math.min(sprite.height, Math.round(rect.y + rect.height));
+      if (sx1 <= sx0 || sy1 <= sy0) return 0;
+      const next = cloneProject(project);
+      const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const pixels = target.frames[rect.frameIndex]!.pixels;
+      const w = sx1 - sx0;
+      const h = sy1 - sy0;
+      const buffer = new Array<number>(w * h);
+      const changedPixels: ProjectPixelHint[] = [];
+      for (let y = sy0; y < sy1; y++)
+        for (let x = sx0; x < sx1; x++) {
+          const index = y * sprite.width + x;
+          buffer[(y - sy0) * w + (x - sx0)] = pixels[index];
+          if (pixels[index] !== TRANSPARENT) {
+            pixels[index] = TRANSPARENT;
+            changedPixels.push({ spriteId: sprite.id, frameIndex: rect.frameIndex, x, y });
+          }
+        }
+      let moved = 0;
+      for (let y = sy0; y < sy1; y++)
+        for (let x = sx0; x < sx1; x++) {
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= sprite.width || ny >= sprite.height) continue;
+          pixels[ny * sprite.width + nx] = buffer[(y - sy0) * w + (x - sx0)];
+          changedPixels.push({ spriteId: sprite.id, frameIndex: rect.frameIndex, x: nx, y: ny });
+          moved++;
+        }
+      if (changedPixels.length > 0) {
+        commit(next, undefined, "local", "Move selection", cellHint(changedPixels));
+      }
+      return moved;
     },
 
     transform(op, opts) {
@@ -945,6 +1058,87 @@ export const useStore = create<ProjectState>()((set, get) => {
         selectedTileId: null,
       });
       return { ok: true };
+    },
+
+    listProjectSaves() {
+      return readSaveSlots(PROJECT_SAVES_KEY).map(({ name, savedAt }) => ({ name, savedAt }));
+    },
+
+    saveProjectAs(name) {
+      const clean = cleanSaveName(name) ?? get().project.name.trim().slice(0, MAX_SAVE_NAME_LENGTH) ?? "Untitled";
+      if (!clean) return { ok: false, error: "name must be a non-empty string" };
+      const slots = readSaveSlots(PROJECT_SAVES_KEY).filter((slot) => slot.name !== clean);
+      if (slots.length >= MAX_SAVED_PROJECTS) {
+        return { ok: false, error: `project library is full (${MAX_SAVED_PROJECTS} saves max)` };
+      }
+      slots.unshift({ name: clean, savedAt: Date.now(), data: cloneProject(get().project) });
+      if (!writeSaveSlots(PROJECT_SAVES_KEY, slots)) {
+        return { ok: false, error: "local storage is unavailable or full" };
+      }
+      return { ok: true, name: clean };
+    },
+
+    openProjectSave(name) {
+      const clean = cleanSaveName(name);
+      if (!clean) return { ok: false, error: "name must be a non-empty string" };
+      const slot = readSaveSlots(PROJECT_SAVES_KEY).find((s) => s.name === clean);
+      if (!slot) return { ok: false, error: `no saved project named '${clean}'` };
+      return get().loadProject(slot.data);
+    },
+
+    deleteProjectSave(name) {
+      const clean = cleanSaveName(name);
+      if (!clean) return false;
+      const slots = readSaveSlots(PROJECT_SAVES_KEY);
+      const next = slots.filter((slot) => slot.name !== clean);
+      if (next.length === slots.length) return false;
+      return writeSaveSlots(PROJECT_SAVES_KEY, next);
+    },
+
+    listPaletteSaves() {
+      return readPaletteSlots().map(({ name, savedAt }) => ({ name, savedAt }));
+    },
+
+    savePaletteAs(name) {
+      const clean =
+        cleanSaveName(name) ?? `${get().project.name.trim().slice(0, MAX_SAVE_NAME_LENGTH) || "Untitled"} palette`;
+      if (!clean) return { ok: false, error: "name must be a non-empty string" };
+      const slots = readSaveSlots(PALETTE_SAVES_KEY).filter((slot) => slot.name !== clean);
+      if (slots.length >= MAX_SAVED_PALETTES) {
+        return { ok: false, error: `palette library is full (${MAX_SAVED_PALETTES} saves max)` };
+      }
+      slots.unshift({ name: clean, savedAt: Date.now(), data: [...get().project.palette] });
+      if (!writeSaveSlots(PALETTE_SAVES_KEY, slots)) {
+        return { ok: false, error: "local storage is unavailable or full" };
+      }
+      return { ok: true, name: clean };
+    },
+
+    applyPaletteSave(name) {
+      const clean = cleanSaveName(name);
+      if (!clean) return { ok: false, error: "name must be a non-empty string" };
+      const slot = readPaletteSlots().find((s) => s.name === clean);
+      if (!slot) return { ok: false, error: `no saved palette named '${clean}'` };
+      const next = cloneProject(get().project);
+      let added = 0;
+      for (const hex of slot.colors) {
+        if (next.palette.includes(hex)) continue;
+        if (next.palette.length >= MAX_PALETTE_COLORS) break;
+        next.palette.push(hex);
+        added++;
+      }
+      // Merge-only: existing indices never move, so artwork is untouched.
+      if (added > 0) commit(next, undefined, "local", "Apply palette", { kind: "palette" });
+      return { ok: true, added };
+    },
+
+    deletePaletteSave(name) {
+      const clean = cleanSaveName(name);
+      if (!clean) return false;
+      const slots = readSaveSlots(PALETTE_SAVES_KEY);
+      const next = slots.filter((slot) => slot.name !== clean);
+      if (next.length === slots.length) return false;
+      return writeSaveSlots(PALETTE_SAVES_KEY, next);
     },
 
     applyRoomProject(p) {

@@ -16,6 +16,11 @@ export function AgentPanel() {
   const tools = useUi((s) => s.registeredTools);
   const log = useUi((s) => s.log);
   const agentPresence = useUi((s) => s.agentPresence);
+  // Agent work happens in whichever window runs the tools; in a room the far
+  // side only ever sees it through presence, so surface remembered remote
+  // activity here (it persists after the action finishes).
+  const agentActivity = useUi((s) => s.agentActivity);
+  const hasActivity = log.length > 0 || agentActivity.length > 0 || agentPresence !== null;
 
   // keep inspector in sync with live tool registry
   useEffect(() => {
@@ -78,6 +83,14 @@ export function AgentPanel() {
       )}
 
       <h4>Try asking your agent</h4>
+      <div className="panel-row">
+        <button
+          className="primary-btn"
+          onClick={() => useUi.getState().openTutorial(0)}
+        >
+          Start guided tutorial
+        </button>
+      </div>
       <ul className="prompt-list">
         {EXAMPLE_PROMPTS.map((p) => (
           <li key={p}>{p}</li>
@@ -85,16 +98,31 @@ export function AgentPanel() {
       </ul>
 
       <h4>Exposed tools ({tools.length})</h4>
-      <ul className="tool-list">
+      <ul className="tool-list scrollable">
         {tools.map((t) => (
-          <li key={t.name} title={t.description}>
+          <li key={t.name}>
             <code>{t.name}</code>
+            <span className="tool-desc">{t.description}</span>
           </li>
         ))}
       </ul>
 
       <h4>Agent activity</h4>
-      {log.length === 0 && <p className="hint">No agent calls yet. They'll appear here as they happen.</p>}
+      {agentActivity.map((entry, i) => (
+        <div className="agent-live-card remote" key={`${entry.peerId}-${entry.tool}-${entry.message}-${i}`}>
+          <span className="agent-live-avatar">
+            <Icon icon="mingcute:bot" />
+          </span>
+          <div className="agent-live-copy">
+            <strong>{entry.name} · {entry.status}</strong>
+            <span>{entry.message}{entry.tool && entry.status !== "idle" ? ` (${entry.tool})` : ""}</span>
+          </div>
+          <span className="agent-progress" aria-label={`${Math.round(entry.progress * 100)}% complete`}>
+            <i style={{ width: `${Math.round(entry.progress * 100)}%` }} />
+          </span>
+        </div>
+      ))}
+      {!hasActivity && <p className="hint">No agent calls yet. They'll appear here as they happen.</p>}
       <ul className="log-list">
         {log.map((e) => (
           <li key={e.id}>

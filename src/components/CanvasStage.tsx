@@ -16,6 +16,8 @@ export function CanvasStage() {
   const { tool, colorIdx, zoom, onion, showGrid, fps, playing } = useEditor();
   const setColor = useEditor((s) => s.setColor);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const selection = useEditor((s) => s.selection);
+  const setSelection = useEditor((s) => s.setSelection);
 
   const sprite = useStore((s) => s.activeSprite());
   const agentPresence = useUi((s) => s.agentPresence);
@@ -25,6 +27,8 @@ export function CanvasStage() {
   const dragging = useRef(false);
   const [canvasBox, setCanvasBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const lastCell = useRef<[number, number] | null>(null);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [moveDrag, setMoveDrag] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -66,17 +70,20 @@ export function CanvasStage() {
   const width = (sprite?.width ?? 0) * zoom;
   const height = (sprite?.height ?? 0) * zoom;
 
+  // Fine-grained neutral checker so transparency reads without shouting,
+  // independent of zoom (a zoom-sized checker turns into a waffle).
   const checker = useMemo(() => {
+    const cell = 8;
     const c = document.createElement("canvas");
-    c.width = c.height = zoom;
+    c.width = c.height = cell * 2;
     const cx = c.getContext("2d")!;
-    cx.fillStyle = "#e8e5dc";
-    cx.fillRect(0, 0, zoom, zoom);
-    cx.fillStyle = "#d8d5cc";
-    cx.fillRect(0, 0, Math.ceil(zoom / 2), Math.ceil(zoom / 2));
-    cx.fillRect(Math.ceil(zoom / 2), Math.ceil(zoom / 2), Math.ceil(zoom / 2), Math.ceil(zoom / 2));
+    cx.fillStyle = "#0b0b0b";
+    cx.fillRect(0, 0, cell * 2, cell * 2);
+    cx.fillStyle = "#151515";
+    cx.fillRect(0, 0, cell, cell);
+    cx.fillRect(cell, cell, cell, cell);
     return c;
-  }, [zoom]);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -130,6 +137,36 @@ export function CanvasStage() {
       agentPresence?.spriteId === sprite.id && agentPresence.frameIndex === activeFrameIndex
         ? agentPresence.preview
         : [];
+
+    // Select-tool move preview: lift the selection, redraw it at the drag
+    // offset. The commit happens once on pointer-up via movePixels.
+    if (
+      moveDrag &&
+      (moveDrag.dx !== 0 || moveDrag.dy !== 0) &&
+      selection &&
+      selection.spriteId === sprite.id &&
+      selection.frameIndex === activeFrameIndex
+    ) {
+      const sx0 = Math.max(0, selection.x);
+      const sy0 = Math.max(0, selection.y);
+      const sx1 = Math.min(sprite.width, selection.x + selection.width);
+      const sy1 = Math.min(sprite.height, selection.y + selection.height);
+      for (let y = sy0; y < sy1; y++)
+        for (let x = sx0; x < sx1; x++) {
+          if (pattern) {
+            ctx.fillStyle = pattern;
+            ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+          }
+          const p = frame.pixels[y * sprite.width + x];
+          if (p === TRANSPARENT || !project.palette[p]) continue;
+          const nx = x + moveDrag.dx;
+          const ny = y + moveDrag.dy;
+          if (nx < 0 || ny < 0 || nx >= sprite.width || ny >= sprite.height) continue;
+          ctx.fillStyle = project.palette[p];
+          ctx.fillRect(nx * zoom, ny * zoom, zoom, zoom);
+        }
+    }
+
     if (preview.length) {
       ctx.globalAlpha = 0.78;
       for (const cell of preview) {
@@ -147,8 +184,36 @@ export function CanvasStage() {
       ctx.globalAlpha = 1;
     }
 
+    // Live previews streamed by room peers: this is what makes agent paint
+    // strokes appear one pixel at a time on watchers' screens, before the
+    // committed edit lands as a room operation.
+    const remotePreviews = remotePeers.filter(
+      (peer) =>
+        peer.spriteId === sprite.id &&
+        peer.frameIndex === activeFrameIndex &&
+        peer.preview.length > 0,
+    );
+    if (remotePreviews.length > 0) {
+      ctx.globalAlpha = 0.6;
+      for (const peer of remotePreviews) {
+        for (const cell of peer.preview) {
+          if (cell.x < 0 || cell.y < 0 || cell.x >= sprite.width || cell.y >= sprite.height) continue;
+          if (cell.color === null) {
+            if (pattern) {
+              ctx.fillStyle = pattern;
+              ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+            }
+          } else {
+            ctx.fillStyle = cell.color;
+            ctx.fillRect(cell.x * zoom, cell.y * zoom, zoom, zoom);
+          }
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
     if (showGrid) {
-      ctx.strokeStyle = "rgba(32,35,59,0.28)";
+      ctx.strokeStyle = "rgba(244,244,244,0.16)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let x = 0; x <= sprite.width; x++) {
@@ -163,7 +228,7 @@ export function CanvasStage() {
       ctx.strokeStyle = "rgba(255,255,255,0.5)";
       ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
     }
-  }, [sprite, project.palette, activeFrameIndex, zoom, onion, showGrid, checker, agentPresence]);
+  }, [sprite, project.palette, activeFrameIndex, zoom, onion, showGrid, checker, agentPresence, moveDrag, selection, roomPeers]);
 
   function cellFromEvent(e: React.PointerEvent<HTMLCanvasElement>): [number, number] | null {
     const canvas = canvasRef.current;
@@ -173,6 +238,51 @@ export function CanvasStage() {
     const y = Math.floor(((e.clientY - rect.top) / rect.height) * sprite.height);
     if (x < 0 || y < 0 || x >= sprite.width || y >= sprite.height) return null;
     return [x, y];
+  }
+
+  function selectionForView() {
+    if (!sprite || !selection) return null;
+    if (selection.spriteId !== sprite.id || selection.frameIndex !== activeFrameIndex) return null;
+    return selection;
+  }
+
+  function rectStyle(r: { x: number; y: number; width: number; height: number }) {
+    if (!sprite) return {};
+    return {
+      left: `${(r.x / sprite.width) * 100}%`,
+      top: `${(r.y / sprite.height) * 100}%`,
+      width: `${(r.width / sprite.width) * 100}%`,
+      height: `${(r.height / sprite.height) * 100}%`,
+    };
+  }
+
+  function commitMarquee(m: { x0: number; y0: number; x1: number; y1: number }) {
+    if (!sprite) return;
+    if (m.x0 === m.x1 && m.y0 === m.y1) {
+      setSelection(null);
+      return;
+    }
+    const x = Math.min(m.x0, m.x1);
+    const y = Math.min(m.y0, m.y1);
+    setSelection({
+      spriteId: sprite.id,
+      frameIndex: activeFrameIndex,
+      x,
+      y,
+      width: Math.abs(m.x1 - m.x0) + 1,
+      height: Math.abs(m.y1 - m.y0) + 1,
+    });
+  }
+
+  function commitMoveDrag(d: { dx: number; dy: number }) {
+    const s = selectionForView();
+    if (!s || !sprite || (d.dx === 0 && d.dy === 0)) return;
+    useStore.getState().movePixels(s, d.dx, d.dy);
+    setSelection({
+      ...s,
+      x: Math.max(0, Math.min(sprite.width - s.width, s.x + d.dx)),
+      y: Math.max(0, Math.min(sprite.height - s.height, s.y + d.dy)),
+    });
   }
 
   function applyAt(cell: [number, number], erase: boolean) {
@@ -220,6 +330,22 @@ export function CanvasStage() {
             e.currentTarget.setPointerCapture(e.pointerId);
             const cell = cellFromEvent(e);
             if (!cell) return;
+            if (tool === "select") {
+              const s = selectionForView();
+              if (
+                s &&
+                e.button !== 2 &&
+                cell[0] >= s.x && cell[0] < s.x + s.width &&
+                cell[1] >= s.y && cell[1] < s.y + s.height
+              ) {
+                dragging.current = true;
+                setMoveDrag({ ox: cell[0], oy: cell[1], dx: 0, dy: 0 });
+              } else {
+                dragging.current = true;
+                setMarquee({ x0: cell[0], y0: cell[1], x1: cell[0], y1: cell[1] });
+              }
+              return;
+            }
             const erase = e.button === 2;
             dragging.current = true;
             lastCell.current = cell;
@@ -235,6 +361,11 @@ export function CanvasStage() {
               useStore.getState().endStroke();
               return;
             }
+            if (tool === "select") {
+              if (moveDrag) setMoveDrag({ ...moveDrag, dx: cell[0] - moveDrag.ox, dy: cell[1] - moveDrag.oy });
+              else if (marquee) setMarquee({ ...marquee, x1: cell[0], y1: cell[1] });
+              return;
+            }
             const erase = e.buttons === 2;
             if (
               tool !== "fill" &&
@@ -248,11 +379,21 @@ export function CanvasStage() {
             lastCell.current = cell;
           }}
           onPointerUp={() => {
+            if (marquee) {
+              commitMarquee(marquee);
+              setMarquee(null);
+            }
+            if (moveDrag) {
+              commitMoveDrag(moveDrag);
+              setMoveDrag(null);
+            }
             dragging.current = false;
             lastCell.current = null;
             useStore.getState().endStroke();
           }}
           onPointerCancel={() => {
+            setMarquee(null);
+            setMoveDrag(null);
             dragging.current = false;
             lastCell.current = null;
             useStore.getState().endStroke();
@@ -277,6 +418,30 @@ export function CanvasStage() {
           {remotePeers
             .filter((peer) => peer.spriteId === sprite.id && peer.frameIndex === activeFrameIndex)
             .map((peer) => <AgentCursor key={peer.id} presence={peer} sprite={sprite} />)}
+          {(() => {
+            const s = selectionForView();
+            if (marquee) {
+              const x = Math.min(marquee.x0, marquee.x1);
+              const y = Math.min(marquee.y0, marquee.y1);
+              return (
+                <div
+                  className="selection-marquee"
+                  style={rectStyle({
+                    x,
+                    y,
+                    width: Math.abs(marquee.x1 - marquee.x0) + 1,
+                    height: Math.abs(marquee.y1 - marquee.y0) + 1,
+                  })}
+                />
+              );
+            }
+            if (!s) return null;
+            const dx = moveDrag?.dx ?? 0;
+            const dy = moveDrag?.dy ?? 0;
+            return (
+              <div className="selection-outline" style={rectStyle({ ...s, x: s.x + dx, y: s.y + dy })} />
+            );
+          })()}
         </div>
       </div>
       <div className="stage-footer">
@@ -308,7 +473,7 @@ export function CanvasStage() {
   );
 }
 
-type CursorPresence = Pick<RoomPresence, "id" | "name" | "kind" | "color" | "status" | "cursor" | "progress" | "message"> & {
+type CursorPresence = Pick<RoomPresence, "id" | "name" | "kind" | "color" | "status" | "cursor" | "progress" | "message" | "preview"> & {
   spriteId: string | null;
   frameIndex: number;
 };

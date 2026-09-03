@@ -62,6 +62,74 @@ export function PalettePanel() {
           {replaceMode ? "Cancel remap" : "Remap color…"}
         </button>
       </div>
+      <PaletteLibrary />
+    </div>
+  );
+}
+
+function PaletteLibrary() {
+  const savePaletteAs = useStore((s) => s.savePaletteAs);
+  const applyPaletteSave = useStore((s) => s.applyPaletteSave);
+  const deletePaletteSave = useStore((s) => s.deletePaletteSave);
+  const listPaletteSaves = useStore((s) => s.listPaletteSaves);
+  const [draft, setDraft] = useState("");
+  const [saves, setSaves] = useState(() => listPaletteSaves());
+  const refresh = () => setSaves(listPaletteSaves());
+
+  function save() {
+    const result = savePaletteAs(draft.trim() ? draft : undefined);
+    if (!result.ok) {
+      alert(`Could not save palette: ${result.error}`);
+      return;
+    }
+    setDraft("");
+    refresh();
+  }
+
+  function apply(name: string) {
+    const result = applyPaletteSave(name);
+    if (!result.ok) alert(`Could not apply palette: ${result.error}`);
+  }
+
+  return (
+    <div>
+      <div className="panel-row">
+        <input
+          className="text-input grow"
+          value={draft}
+          maxLength={64}
+          placeholder="slime-grotto"
+          aria-label="Palette save name"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+          }}
+        />
+        <button className="text-btn" onClick={save} title="Save the current palette">
+          Save palette
+        </button>
+      </div>
+      {saves.length === 0 && <p className="hint">No saved palettes yet.</p>}
+      <ul className="log-list">
+        {saves.map((s) => (
+          <li key={s.name}>
+            <button className="text-btn grow" onClick={() => apply(s.name)} title={`Merge '${s.name}' into this project`}>
+              {s.name}
+            </button>
+            <button
+              className="icon-btn"
+              title={`Delete '${s.name}'`}
+              aria-label={`Delete saved palette ${s.name}`}
+              onClick={() => {
+                deletePaletteSave(s.name);
+                refresh();
+              }}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
