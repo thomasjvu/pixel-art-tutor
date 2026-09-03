@@ -1,18 +1,23 @@
 import { PartySocket } from "partysocket";
 import {
+  applyRoomPatch,
   cloneProject,
   isProject,
+  mergeProjectChanges,
   parseRoomMessage,
+  projectChangeToRoomPatch,
   ROOM_PROTOCOL_VERSION,
   type ActorKind,
   type RoomClientMessage,
+  type RoomErrorMessage,
   type RoomOperationSummary,
+  type RoomPatch,
   type RoomPresence,
   type RoomServerMessage,
 } from "./protocol";
 import { subscribeProjectChanges, useStore } from "../store/projectStore";
-import { useUi } from "../store/uiStore";
-import type { ProjectChange } from "./projectEvents";
+import { useUi, type RoomConnectionStatus } from "../store/uiStore";
+import { mergeProjectChangeHints, type ProjectChange } from "./projectEvents";
 import { MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
 
 const ROOM_QUERY_KEY = "room";
@@ -22,7 +27,24 @@ const ROOM_COLORS = ["#e95d55", "#4daa91", "#668fd4", "#d99c3f", "#9a74c9"];
 
 function randomId(prefix: string): string {
   const uuid = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : null;
-  return `${prefix}-${uuid ?? Math.random().toString(36).slice(2, 12)}`;
+  if (uuid) return `${prefix}-${uuid}`;
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return `${prefix}-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function randomRoomId(): string {
+  const uuid = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : null;
+  if (uuid) return `tiny-${uuid.replaceAll("-", "")}`;
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return `tiny-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  }
+  return `tiny-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
 function storageValue(key: string): string | null {
@@ -99,6 +121,14 @@ function presenceFor(
   };
 }
 
+interface InFlightOperation {
+  operationId: string;
+  change: ProjectChange;
+  patch: RoomPatch | null;
+}
+
+type SendResult = "sent" | "unavailable" | "too_large" | "failed";
+
 export class RoomClient {
   private socket: PartySocket | null = null;
   private unsubscribeProjects: (() => void) | null = null;
@@ -110,6 +140,9 @@ export class RoomClient {
   private activeRoomId: string | null = null;
   private lastSeq = 0;
   private pendingChange: ProjectChange | null = null;
+  private inFlightOperation: InFlightOperation | null = null;
+  private resyncRequired = false;
+  private snapshotRequestOutstanding = false;
   private lastLocalOperationId: string | null = null;
   private lastUndoOperationId: string | null = null;
   private readonly id = clientId();
@@ -134,7 +167,7 @@ export class RoomClient {
   }
 
   get isConnected(): boolean {
-    return this.ready && this.socket?.readyState === 1;
+    return !useUi.getState().roomSyncBlocked && this.ready && this.socket?.readyState === 1;
   }
 
   start(): void {
@@ -158,9 +191,19 @@ export class RoomClient {
     if (this.presenceTimer !== null) window.clearTimeout(this.presenceTimer);
     this.presenceTimer = null;
     this.pendingPresence = null;
+    this.pendingChange = null;
+    this.inFlightOperation = null;
+    this.resyncRequired = false;
+    this.snapshotRequestOutstanding = false;
     useUi.getState().setRoomPeers([]);
     useUi.getState().setRoomHistory(false, false);
-    useUi.getState().setRoomConnection({ roomStatus: "idle", roomId: null, roomError: null, roomSeq: 0 });
+    useUi.getState().setRoomConnection({
+      roomStatus: "idle",
+      roomId: null,
+      roomError: null,
+      roomSeq: 0,
+      roomSyncBlocked: false,
+    });
   }
 
   joinRoom(room: string | null): void {
@@ -173,17 +216,26 @@ export class RoomClient {
     if (!next) {
       this.activeRoomId = null;
       this.pendingChange = null;
+      this.inFlightOperation = null;
+      this.resyncRequired = false;
+      this.snapshotRequestOutstanding = false;
       this.closeSocket();
       useUi.getState().setRoomPeers([]);
       useUi.getState().setRoomHistory(false, false);
-      useUi.getState().setRoomConnection({ roomId: null, roomStatus: "idle", roomError: null, roomSeq: 0 });
+      useUi.getState().setRoomConnection({
+        roomId: null,
+        roomStatus: "idle",
+        roomError: null,
+        roomSeq: 0,
+        roomSyncBlocked: false,
+      });
       return;
     }
     this.connect(next);
   }
 
   createRoom(): string {
-    const room = `tiny-${Math.random().toString(36).slice(2, 8)}`;
+    const room = randomRoomId();
     this.joinRoom(room);
     return room;
   }
@@ -220,11 +272,16 @@ export class RoomClient {
       useUi.getState().setRoomConnection({ roomError: "Only your latest room edit can be undone." });
       return;
     }
-    this.send({
+    if (this.inFlightOperation) {
+      this.setRoomError("Your latest room edit is still syncing. Try undo again in a moment.");
+      return;
+    }
+    const sent = this.send({
       type: "undo",
       protocol: ROOM_PROTOCOL_VERSION,
       operationId: this.lastLocalOperationId,
     });
+    if (sent !== "sent") this.setRoomError("Could not send the undo request. It will be available after reconnecting.");
   }
 
   requestRedo(): void {
@@ -232,11 +289,16 @@ export class RoomClient {
       useUi.getState().setRoomConnection({ roomError: "There is no shared edit ready to redo." });
       return;
     }
-    this.send({
+    if (this.inFlightOperation) {
+      this.setRoomError("Your latest room edit is still syncing. Try redo again in a moment.");
+      return;
+    }
+    const sent = this.send({
       type: "redo",
       protocol: ROOM_PROTOCOL_VERSION,
       operationId: this.lastUndoOperationId,
     });
+    if (sent !== "sent") this.setRoomError("Could not send the redo request. It will be available after reconnecting.");
   }
 
   private connect(room: string): void {
@@ -247,6 +309,9 @@ export class RoomClient {
     this.lastLocalOperationId = null;
     this.lastUndoOperationId = null;
     this.pendingChange = null;
+    this.inFlightOperation = null;
+    this.resyncRequired = false;
+    this.snapshotRequestOutstanding = false;
 
     const host = configuredHost();
     useUi.getState().setRoomConnection({
@@ -255,6 +320,7 @@ export class RoomClient {
       roomError: host ? null : "Set VITE_PARTY_HOST to enable shared rooms.",
       roomStatus: host ? "connecting" : "disabled",
       roomSeq: 0,
+      roomSyncBlocked: false,
     });
     if (!host) return;
 
@@ -299,8 +365,9 @@ export class RoomClient {
 
   private onOpen(): void {
     this.ready = false;
+    this.snapshotRequestOutstanding = false;
     useUi.getState().setRoomConnection({ roomStatus: "connecting", roomError: null });
-    this.send({
+    const sent = this.send({
       type: "hello",
       protocol: ROOM_PROTOCOL_VERSION,
       clientId: this.id,
@@ -309,6 +376,9 @@ export class RoomClient {
       color: this.color,
       project: cloneProject(useStore.getState().project),
     });
+    if (sent === "too_large") {
+      this.blockRoomSync("This project is too large to join a room. Download a local backup before continuing.");
+    }
   }
 
   private onClose(): void {
@@ -344,7 +414,7 @@ export class RoomClient {
         this.onOperation(message);
         break;
       case "room_error":
-        this.onRoomError(message.message, message.project, message.seq);
+        this.onRoomError(message);
         break;
     }
   }
@@ -353,22 +423,64 @@ export class RoomClient {
     if (!message.project || !isProject(message.project)) return;
     this.ready = true;
     this.lastSeq = message.seq;
+    this.resyncRequired = false;
+    this.snapshotRequestOutstanding = false;
     useUi.getState().setRoomConnection({
       roomId: message.roomId,
       roomStatus: "connected",
       roomError: null,
       roomSeq: message.seq,
+      roomSyncBlocked: false,
     });
     this.onPresenceState(message.peers);
 
-    if (this.pendingChange && projectChanged(message.project, this.pendingChange.project)) {
-      this.sendOperation(this.pendingChange);
+    const inFlight = this.inFlightOperation;
+    if (inFlight) {
+      const acknowledged =
+        message.latestOperation?.operationId === inFlight.operationId ||
+        !projectChanged(message.project, inFlight.change.project);
+      if (acknowledged) {
+        this.inFlightOperation = null;
+        if (this.pendingChange) {
+          if (projectChanged(message.project, this.pendingChange.project)) {
+            this.pendingChange = this.rebaseChange(message.project, this.pendingChange);
+          } else {
+            this.pendingChange = null;
+          }
+        }
+        useStore.getState().applyRoomProject(this.restoreOptimisticEdits(message.project));
+        this.updateHistoryFromLatest(message.latestOperation);
+      } else {
+        this.inFlightOperation = {
+          ...inFlight,
+          change: this.rebaseChange(message.project, inFlight.change),
+        };
+        if (this.pendingChange) {
+          this.pendingChange = this.rebaseChange(
+            this.inFlightOperation.change.project,
+            this.pendingChange,
+          );
+        }
+        useStore.getState().applyRoomProject(this.restoreOptimisticEdits(message.project));
+        // Keep the optimistic local edit visible while retrying the exact
+        // operation ID. The server deduplicates a message it already accepted.
+        this.sendOperation(this.inFlightOperation);
+      }
+    } else if (this.pendingChange) {
+      if (projectChanged(message.project, this.pendingChange.project)) {
+        this.pendingChange = this.rebaseChange(message.project, this.pendingChange);
+        useStore.getState().applyRoomProject(this.restoreOptimisticEdits(message.project));
+      } else {
+        this.pendingChange = null;
+        useStore.getState().applyRoomProject(message.project);
+        this.updateHistoryFromLatest(message.latestOperation);
+      }
     } else {
-      this.pendingChange = null;
       useStore.getState().applyRoomProject(message.project);
       this.updateHistoryFromLatest(message.latestOperation);
     }
     this.updatePresence(this.presence);
+    this.flushProjectOutbox();
   }
 
   private onPresence(presence: RoomPresence): void {
@@ -380,14 +492,95 @@ export class RoomClient {
     useUi.getState().setRoomPeers(peers.filter((peer) => peer.id !== this.id));
   }
 
+  private rebaseChange(base: ProjectChange["project"], change: ProjectChange): ProjectChange {
+    const rebased = this.applyChangeToProject(base, change) ?? mergeProjectChanges(
+      base,
+      change.previousProject,
+      change.project,
+    );
+    return {
+      ...change,
+      previousProject: cloneProject(base),
+      project: cloneProject(rebased),
+    };
+  }
+
+  private applyChangeToProject(base: ProjectChange["project"], change: ProjectChange): ProjectChange["project"] | null {
+    const patch = projectChangeToRoomPatch(change.previousProject, change.project, change.hint);
+    if (patch) return applyRoomPatch(base, patch);
+    const merged = mergeProjectChanges(base, change.previousProject, change.project);
+    return isProject(merged) ? merged : null;
+  }
+
+  private restoreOptimisticEdits(base: ProjectChange["project"]): ProjectChange["project"] {
+    let next = base;
+    if (this.inFlightOperation) {
+      next = this.applyChangeToProject(next, this.inFlightOperation.change) ?? next;
+    }
+    if (this.pendingChange) {
+      next = this.applyChangeToProject(next, this.pendingChange) ?? next;
+    }
+    return next;
+  }
+
+  private requestSnapshot(): void {
+    if (this.snapshotRequestOutstanding) return;
+    if (!this.isConnected) {
+      this.reconnectForResync();
+      return;
+    }
+    this.snapshotRequestOutstanding = true;
+    const result = this.send({
+      type: "snapshot_request",
+      protocol: ROOM_PROTOCOL_VERSION,
+      lastSeq: this.lastSeq,
+    });
+    if (result !== "sent") {
+      this.snapshotRequestOutstanding = false;
+      this.reconnectForResync();
+    }
+  }
+
+  private reconnectForResync(): void {
+    const socket = this.socket;
+    if (!socket || this.intentionalClose) return;
+    try {
+      socket.reconnect(1012, "Room resync");
+    } catch {
+      socket.close(1012, "Room resync");
+    }
+  }
+
   private onOperation(message: Extract<RoomServerMessage, { type: "operation" }>): void {
-    if (message.seq <= this.lastSeq || !isProject(message.project)) return;
+    if (this.resyncRequired || useUi.getState().roomSyncBlocked) return;
+    if (message.seq <= this.lastSeq) return;
+    const currentProject = useStore.getState().project;
+    const operationProject =
+      message.mode === "patch"
+        ? applyRoomPatch(currentProject, message.patch)
+        : isProject(message.project)
+          ? message.project
+          : null;
+    if (!operationProject) {
+      this.resyncRequired = true;
+      this.setRoomError("A room edit could not be applied. Requesting a fresh room snapshot.");
+      this.requestSnapshot();
+      return;
+    }
     this.lastSeq = message.seq;
     useUi.getState().setRoomConnection({ roomSeq: message.seq, roomError: null });
+    const acknowledged = this.inFlightOperation?.operationId === message.operationId;
+    let nextProject = operationProject;
+    if (message.actorId === this.id && acknowledged && this.pendingChange) {
+      nextProject = this.applyChangeToProject(nextProject, this.pendingChange) ?? nextProject;
+    } else if (message.actorId !== this.id && (this.inFlightOperation || this.pendingChange)) {
+      nextProject = this.restoreOptimisticEdits(nextProject);
+    }
     if (message.actorId === this.id) {
-      if (projectChanged(useStore.getState().project, message.project)) {
-        useStore.getState().applyRoomProject(message.project);
+      if (projectChanged(currentProject, nextProject)) {
+        useStore.getState().applyRoomProject(nextProject);
       }
+      if (acknowledged) this.inFlightOperation = null;
       if (message.kind === "edit") {
         this.lastLocalOperationId = message.operationId;
         this.lastUndoOperationId = null;
@@ -402,12 +595,19 @@ export class RoomClient {
         useUi.getState().setRoomHistory(true, false);
       }
     } else {
-      useStore.getState().applyRoomProject(message.project);
-      this.lastLocalOperationId = null;
-      this.lastUndoOperationId = null;
-      useUi.getState().setRoomHistory(false, false);
+      if (projectChanged(currentProject, nextProject)) {
+        useStore.getState().applyRoomProject(nextProject);
+      }
+      if (this.inFlightOperation) {
+        useUi.getState().setRoomHistory(true, false);
+      } else {
+        this.lastLocalOperationId = null;
+        this.lastUndoOperationId = null;
+        useUi.getState().setRoomHistory(false, false);
+      }
     }
-    this.updateHistoryFromLatest(message);
+    if (message.actorId === this.id || !this.inFlightOperation) this.updateHistoryFromLatest(message);
+    this.flushProjectOutbox();
   }
 
   private updateHistoryFromLatest(operation: RoomOperationSummary | null): void {
@@ -428,65 +628,190 @@ export class RoomClient {
     }
   }
 
-  private onRoomError(message: string, project?: unknown, seq?: number): void {
-    const validProject = isProject(project) ? project : undefined;
-    if (validProject) useStore.getState().applyRoomProject(validProject);
-    if (typeof seq === "number") this.lastSeq = seq;
-    this.setRoomError(message);
+  private onRoomError(message: RoomErrorMessage): void {
+    const validProject = isProject(message.project) ? message.project : undefined;
+    const inFlight = this.inFlightOperation;
+    const matchesInFlight =
+      Boolean(message.operationId) && inFlight?.operationId === message.operationId;
+    const failedInFlight =
+      matchesInFlight && (message.scope === undefined || message.scope === "request");
+    if (validProject) {
+      this.resyncRequired = false;
+      this.snapshotRequestOutstanding = false;
+      if (failedInFlight) {
+        this.inFlightOperation = null;
+        this.lastLocalOperationId = null;
+        this.lastUndoOperationId = null;
+      } else if (inFlight) {
+        this.inFlightOperation = {
+          ...inFlight,
+          change: this.rebaseChange(validProject, inFlight.change),
+        };
+      }
+      if (this.pendingChange) {
+        const pendingBase = this.inFlightOperation?.change.project ?? validProject;
+        this.pendingChange = this.rebaseChange(pendingBase, this.pendingChange);
+      }
+      useStore.getState().applyRoomProject(this.restoreOptimisticEdits(validProject));
+      if (failedInFlight) useUi.getState().setRoomHistory(false, false);
+    } else if (failedInFlight) {
+      this.inFlightOperation = null;
+      this.lastLocalOperationId = null;
+      this.lastUndoOperationId = null;
+      useUi.getState().setRoomHistory(false, false);
+    }
+    if (typeof message.seq === "number") this.lastSeq = message.seq;
+    if (validProject && message.scope === "room" && this.inFlightOperation) {
+      this.sendOperation(this.inFlightOperation);
+    }
+    this.setRoomError(message.message);
+    this.flushProjectOutbox();
   }
 
-  private setRoomError(message: string): void {
-    useUi.getState().setRoomConnection({ roomStatus: this.socket ? "offline" : "error", roomError: message });
+  private setRoomError(message: string, status?: RoomConnectionStatus): void {
+    useUi.getState().setRoomConnection({
+      roomStatus: status ?? (this.isConnected ? "connected" : this.socket ? "offline" : "error"),
+      roomError: message,
+    });
     useUi.getState().pushLog({ tool: "room", summary: message, source: "app" });
   }
 
   private onProjectChange(change: ProjectChange): void {
     if (change.source === "remote") return;
-    if (this.isConnected) {
-      this.sendOperation(change);
+    if (useUi.getState().roomSyncBlocked) return;
+    this.queueProjectChange(change);
+    this.flushProjectOutbox();
+  }
+
+  private queueProjectChange(change: ProjectChange): void {
+    const previousProject = this.pendingChange?.previousProject ?? this.inFlightOperation?.change.project;
+    const hint = this.pendingChange
+      ? mergeProjectChangeHints(this.pendingChange.hint, change.hint)
+      : change.hint;
+    this.pendingChange = {
+      ...change,
+      ...(previousProject ? { previousProject } : {}),
+      ...(hint ? { hint } : {}),
+    };
+  }
+
+  private flushProjectOutbox(): void {
+    if (
+      !this.isConnected ||
+      this.inFlightOperation ||
+      !this.pendingChange ||
+      useUi.getState().roomSyncBlocked
+    ) {
       return;
     }
-    this.pendingChange = this.pendingChange
-      ? { ...change, previousProject: this.pendingChange.previousProject }
-      : change;
-  }
-
-  private sendOperation(change: ProjectChange): void {
-    if (!this.isConnected) return;
-    const operationId = randomId("op");
-    this.lastLocalOperationId = operationId;
-    this.lastUndoOperationId = null;
+    const change = this.pendingChange;
+    const record: InFlightOperation = {
+      operationId: randomId("op"),
+      change,
+      patch: projectChangeToRoomPatch(change.previousProject, change.project, change.hint),
+    };
+    const prepared = this.prepareMessage(this.operationMessage(record));
+    if (prepared.status === "too_large") {
+      this.blockRoomSync("That edit is too large to send to the room. Download a local backup before continuing.");
+      return;
+    }
+    if (prepared.status === "failed") {
+      this.setRoomError("Could not prepare that room update.");
+      return;
+    }
+    this.inFlightOperation = record;
     this.pendingChange = null;
+    this.lastLocalOperationId = record.operationId;
+    this.lastUndoOperationId = null;
     useUi.getState().setRoomHistory(true, false);
-    const sent = this.send({
-      type: "operation",
-      protocol: ROOM_PROTOCOL_VERSION,
-      operationId,
-      baseSeq: this.lastSeq,
-      baseProject: cloneProject(change.previousProject),
-      project: cloneProject(change.project),
-      label: change.label,
-    });
-    if (!sent) {
-      this.lastLocalOperationId = null;
-      this.pendingChange = change;
+    const sent = this.sendPrepared(prepared.serialized);
+    if (sent !== "sent" && this.socket && !this.isConnected) {
+      useUi.getState().setRoomConnection({ roomStatus: "offline" });
     }
   }
 
-  private send(message: RoomClientMessage): boolean {
-    if (!this.socket || this.socket.readyState !== 1) return false;
+  private operationMessage(operation: InFlightOperation): RoomClientMessage {
+    const base = {
+      type: "operation" as const,
+      protocol: ROOM_PROTOCOL_VERSION,
+      operationId: operation.operationId,
+      baseSeq: this.lastSeq,
+      label: operation.change.label,
+    };
+    const message: RoomClientMessage = operation.patch
+      ? { ...base, mode: "patch", patch: operation.patch }
+      : {
+          ...base,
+          mode: "snapshot",
+          project: cloneProject(operation.change.project),
+        };
+    return message;
+  }
+
+  private sendOperation(operation: InFlightOperation): SendResult {
+    const message = this.operationMessage(operation);
+    const sent = this.send(message);
+    if (sent === "too_large") {
+      this.blockRoomSync("That edit is too large to send to the room. Download a local backup before continuing.");
+    } else if (sent !== "sent" && this.socket && !this.isConnected) {
+      useUi.getState().setRoomConnection({ roomStatus: "offline" });
+    }
+    return sent;
+  }
+
+  private prepareMessage(
+    message: RoomClientMessage,
+  ):
+    | { status: "ready"; serialized: string }
+    | { status: "too_large" }
+    | { status: "failed" } {
     try {
       const serialized = JSON.stringify(message);
       if (serialized.length > MAX_PROJECT_JSON_LENGTH) {
-        this.setRoomError("That edit is too large to send to the room.");
-        return false;
+        return { status: "too_large" };
       }
-      this.socket.send(serialized);
-      return true;
-    } catch (error) {
-      this.setRoomError(error instanceof Error ? error.message : "Could not send room update.");
-      return false;
+      return { status: "ready", serialized };
+    } catch {
+      return { status: "failed" };
     }
+  }
+
+  private sendPrepared(serialized: string): SendResult {
+    if (!this.socket || this.socket.readyState !== 1) return "unavailable";
+    try {
+      this.socket.send(serialized);
+      return "sent";
+    } catch (error) {
+      this.setRoomError(
+        error instanceof Error ? error.message : "Could not send room update.",
+        "offline",
+      );
+      return "failed";
+    }
+  }
+
+  private send(message: RoomClientMessage): SendResult {
+    const prepared = this.prepareMessage(message);
+    if (prepared.status === "too_large") {
+      this.setRoomError("That room message is too large to send.");
+      return "too_large";
+    }
+    if (prepared.status === "failed") {
+      this.setRoomError("Could not prepare that room message.");
+      return "failed";
+    }
+    return this.sendPrepared(prepared.serialized);
+  }
+
+  private blockRoomSync(message: string): void {
+    this.inFlightOperation = null;
+    this.pendingChange = null;
+    useUi.getState().setRoomConnection({
+      roomStatus: "error",
+      roomError: message,
+      roomSyncBlocked: true,
+    });
+    useUi.getState().pushLog({ tool: "room", summary: message, source: "app" });
   }
 }
 

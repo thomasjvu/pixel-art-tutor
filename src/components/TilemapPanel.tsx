@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store/projectStore";
 import { SpriteThumb } from "./SpriteThumb";
+import { Icon } from "./Icon";
 import { TRANSPARENT } from "../types";
 
 export function TilemapPanel() {
@@ -138,7 +139,7 @@ export function TilemapPanel() {
           onClick={() => setEraseMode(!eraseMode)}
           title="Eraser mode (or right-click)"
         >
-          🧽
+          <Icon icon="mingcute:eraser" />
         </button>
         <button
           className="text-btn"

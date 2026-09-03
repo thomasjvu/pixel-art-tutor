@@ -23,6 +23,7 @@ export function Toolbar() {
   const onion = useEditor((s) => s.onion);
   const toggleOnion = useEditor((s) => s.toggleOnion);
   const palette = useStore((s) => s.project.palette);
+  const onionAvailable = useStore((s) => (s.activeSprite()?.frames.length ?? 0) > 1);
   const past = useStore((s) => s.past.length);
   const future = useStore((s) => s.future.length);
   const roomStatus = useUi((s) => s.roomStatus);
@@ -72,8 +73,9 @@ export function Toolbar() {
         </button>
         <button
           className={onion ? "tool-toggle active" : "tool-toggle"}
+          disabled={!onionAvailable}
           onClick={toggleOnion}
-          title="Toggle onion skin"
+          title={onionAvailable ? "Toggle onion skin" : "Add another frame to use onion skin"}
           aria-pressed={onion}
         >
           <Icon icon="mingcute:layers" />

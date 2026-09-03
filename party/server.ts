@@ -1,20 +1,27 @@
 import { routePartykitRequest, Server } from "partyserver";
 import type { Connection, WSMessage } from "partyserver";
 import {
+  applyRoomPatch,
   cloneProject,
+  isRoomPatch,
   isProject,
-  mergeProjectChanges,
   ROOM_PROTOCOL_VERSION,
   type ActorKind,
+  type RoomErrorScope,
   type RoomOperationSummary,
+  type RoomPatch,
   type RoomPresence,
 } from "../src/realtime/protocol";
-import { MAX_PROJECT_JSON_LENGTH } from "../src/projectLimits";
+import { MAX_ID_LENGTH, MAX_PROJECT_JSON_LENGTH } from "../src/projectLimits";
 import type { Project } from "../src/types";
 
 const STORAGE_KEY = "pixel-room-state-v1";
 const MAX_HISTORY = 32;
 const MAX_MESSAGE_LENGTH = MAX_PROJECT_JSON_LENGTH;
+const MAX_CONNECTIONS_PER_ROOM = 16;
+const RATE_WINDOW_MS = 10_000;
+const MAX_OPERATIONS_PER_WINDOW = 30;
+const MAX_PRESENCE_PER_WINDOW = 120;
 
 interface StoredOperation extends RoomOperationSummary {
   seq: number;
@@ -36,10 +43,21 @@ interface ConnectionState {
   color: string;
   ready: boolean;
   presence: RoomPresence;
+  operationWindowStartedAt: number;
+  operationCount: number;
+  presenceWindowStartedAt: number;
+  presenceCount: number;
+}
+
+interface RoomErrorOptions {
+  includeSnapshot?: boolean;
+  operationId?: string;
+  scope?: RoomErrorScope;
 }
 
 interface RoomEnv {
   PixelRoom: DurableObjectNamespace<PixelRoom>;
+  ROOM_ALLOWED_ORIGIN?: string;
 }
 
 function text(value: unknown, fallback: string, maxLength: number): string {
@@ -100,12 +118,40 @@ function presenceValue(value: unknown, fallback: RoomPresence): RoomPresence | n
 }
 
 function operationId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const uuid = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : null;
+  return `${prefix}-${uuid ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`;
+}
+
+function originGuard(request: Request, allowedOrigin: string | null): Response | undefined {
+  if (!allowedOrigin) return undefined;
+  const origin = request.headers.get("Origin");
+  return origin && origin !== allowedOrigin
+    ? new Response("Origin is not allowed for this room server.", { status: 403 })
+    : undefined;
 }
 
 function connectionState(connection: Connection): ConnectionState | null {
   const state = connection.state as ConnectionState | null;
   return state?.clientId ? state : null;
+}
+
+function consumeBudget(connection: Connection, kind: "operation" | "presence"): boolean {
+  const state = connectionState(connection);
+  if (!state) return false;
+  const now = Date.now();
+  const isOperation = kind === "operation";
+  const windowStartedAt = isOperation ? state.operationWindowStartedAt : state.presenceWindowStartedAt;
+  const count = isOperation ? state.operationCount : state.presenceCount;
+  const maximum = isOperation ? MAX_OPERATIONS_PER_WINDOW : MAX_PRESENCE_PER_WINDOW;
+  const expired = !Number.isFinite(windowStartedAt) || now - windowStartedAt >= RATE_WINDOW_MS;
+  if (!expired && count >= maximum) return false;
+  connection.setState({
+    ...state,
+    ...(isOperation
+      ? { operationWindowStartedAt: expired ? now : windowStartedAt, operationCount: expired ? 1 : count + 1 }
+      : { presenceWindowStartedAt: expired ? now : windowStartedAt, presenceCount: expired ? 1 : count + 1 }),
+  } satisfies ConnectionState);
+  return true;
 }
 
 function summary(operation: StoredOperation | null): RoomOperationSummary | null {
@@ -141,6 +187,7 @@ export class PixelRoom extends Server<RoomEnv> {
   static options = { hibernate: true };
 
   private roomState: StoredRoomState | null = null;
+  private operationTail: Promise<void> = Promise.resolve();
 
   async onStart(): Promise<void> {
     const stored = await this.ctx.storage.get<StoredRoomState>(STORAGE_KEY);
@@ -162,6 +209,10 @@ export class PixelRoom extends Server<RoomEnv> {
   }
 
   async onConnect(connection: Connection, context: { request: Request }): Promise<void> {
+    if (Array.from(this.getConnections()).length > MAX_CONNECTIONS_PER_ROOM) {
+      connection.close(1008, "Room connection limit reached");
+      return;
+    }
     const url = new URL(context.request.url);
     const fallbackId = connection.id || operationId("guest");
     const clientId = text(url.searchParams.get("clientId"), fallbackId, 80);
@@ -188,6 +239,10 @@ export class PixelRoom extends Server<RoomEnv> {
       color: connectionColor,
       ready: false,
       presence,
+      operationWindowStartedAt: 0,
+      operationCount: 0,
+      presenceWindowStartedAt: 0,
+      presenceCount: 0,
     } satisfies ConnectionState);
   }
 
@@ -223,16 +278,24 @@ export class PixelRoom extends Server<RoomEnv> {
         await this.handleHello(connection, message);
         break;
       case "presence":
+        if (!this.allowBudgetedMessage(connection, "presence")) return;
         this.handlePresence(connection, message.presence);
         break;
+      case "snapshot_request":
+        if (!this.allowBudgetedMessage(connection, "operation")) return;
+        this.handleSnapshotRequest(connection, message);
+        break;
       case "operation":
-        await this.handleOperation(connection, message);
+        if (!this.allowBudgetedMessage(connection, "operation")) return;
+        await this.withOperationLock(() => this.handleOperation(connection, message));
         break;
       case "undo":
-        await this.handleUndo(connection, message, false);
+        if (!this.allowBudgetedMessage(connection, "operation")) return;
+        await this.withOperationLock(() => this.handleUndo(connection, message, false));
         break;
       case "redo":
-        await this.handleUndo(connection, message, true);
+        if (!this.allowBudgetedMessage(connection, "operation")) return;
+        await this.withOperationLock(() => this.handleUndo(connection, message, true));
         break;
       default:
         this.sendError(connection, "That room action was not recognized.");
@@ -241,7 +304,20 @@ export class PixelRoom extends Server<RoomEnv> {
 
   private async handleHello(connection: Connection, message: Record<string, unknown>): Promise<void> {
     const state = connectionState(connection);
-    if (!state || !isProject(message.project)) {
+    if (!state) {
+      this.sendError(connection, "This room connection is no longer active.");
+      return;
+    }
+    if (state.ready) {
+      this.sendError(connection, "This room connection has already joined.");
+      return;
+    }
+    if (Array.from(this.getConnections()).length > MAX_CONNECTIONS_PER_ROOM) {
+      this.sendError(connection, "This room is full. Try again after another collaborator leaves.");
+      connection.close(1008, "Room connection limit reached");
+      return;
+    }
+    if (!isProject(message.project)) {
       this.sendError(connection, "A valid project is required to join this room.");
       return;
     }
@@ -261,10 +337,57 @@ export class PixelRoom extends Server<RoomEnv> {
 
     if (!this.roomState) {
       this.roomState = { schemaVersion: 1, seq: 0, project: cloneProject(message.project), history: [] };
-      await this.persist();
+      try {
+        await this.persist();
+      } catch {
+        this.roomState = null;
+        state.ready = false;
+        connection.setState(state);
+        this.sendError(connection, "The room could not be initialized. Please retry.");
+        return;
+      }
     }
     this.sendWelcome(connection);
     this.broadcastPresence();
+  }
+
+  private handleSnapshotRequest(connection: Connection, message: Record<string, unknown>): void {
+    if (
+      typeof message.lastSeq !== "number" ||
+      !Number.isInteger(message.lastSeq) ||
+      message.lastSeq < 0
+    ) {
+      this.sendError(connection, "That room snapshot request was not valid.");
+      return;
+    }
+    this.sendWelcome(connection);
+  }
+
+  private allowBudgetedMessage(connection: Connection, kind: "operation" | "presence"): boolean {
+    const state = connectionState(connection);
+    if (!state?.ready) {
+      this.sendError(connection, "Join the room before sending that message.");
+      return false;
+    }
+    if (consumeBudget(connection, kind)) return true;
+    const label = kind === "operation" ? "edit" : "presence";
+    this.sendError(connection, `Too many ${label} messages. Slow down and try again shortly.`);
+    connection.close(1008, `${label} rate limit exceeded`);
+    return false;
+  }
+
+  private async withOperationLock<T>(task: () => Promise<T>): Promise<T> {
+    const previous = this.operationTail;
+    let release!: () => void;
+    this.operationTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
   }
 
   private handlePresence(connection: Connection, value: unknown): void {
@@ -286,13 +409,34 @@ export class PixelRoom extends Server<RoomEnv> {
       this.sendError(connection, "Join the room before sending an edit.");
       return;
     }
+    const requestOperationId =
+      typeof message.operationId === "string" &&
+      message.operationId.length > 0 &&
+      message.operationId.length <= MAX_ID_LENGTH
+        ? message.operationId
+        : undefined;
+    const mode =
+      message.mode === "patch"
+        ? "patch"
+        : message.mode === undefined || message.mode === "snapshot"
+          ? "snapshot"
+          : null;
     if (
+      mode === null ||
       typeof message.operationId !== "string" ||
       !message.operationId ||
-      !isProject(message.baseProject) ||
-      !isProject(message.project)
+      message.operationId.length > MAX_ID_LENGTH ||
+      typeof message.label !== "string" ||
+      !message.label.trim() ||
+      message.label.length > 80 ||
+      typeof message.baseSeq !== "number" ||
+      !Number.isInteger(message.baseSeq) ||
+      message.baseSeq < 0
     ) {
-      this.sendError(connection, "That edit did not contain a valid project.", true);
+      this.sendError(connection, "That room edit was not valid.", {
+        includeSnapshot: true,
+        operationId: requestOperationId,
+      });
       return;
     }
     const existing = this.roomState.history.find((entry) => entry.operationId === message.operationId);
@@ -300,14 +444,50 @@ export class PixelRoom extends Server<RoomEnv> {
       this.sendOperation(existing);
       return;
     }
-    const baseSeq = typeof message.baseSeq === "number" && Number.isInteger(message.baseSeq) ? message.baseSeq : -1;
     const beforeProject = this.roomState.project;
-    const nextProject =
-      baseSeq === this.roomState.seq
-        ? cloneProject(message.project)
-        : mergeProjectChanges(this.roomState.project, message.baseProject, message.project);
+    let nextProject: Project;
+    let patch: RoomPatch | null = null;
+    if (mode === "patch") {
+      if (!isRoomPatch(message.patch)) {
+        this.sendError(connection, "That room patch was not valid.", {
+          includeSnapshot: true,
+          operationId: requestOperationId,
+        });
+        return;
+      }
+      patch = message.patch;
+      const applied = applyRoomPatch(this.roomState.project, patch);
+      if (!applied) {
+        this.sendError(connection, "That edit no longer fits the current room project.", {
+          includeSnapshot: true,
+          operationId: requestOperationId,
+        });
+        return;
+      }
+      nextProject = applied;
+    } else {
+      if (!isProject(message.project)) {
+        this.sendError(connection, "That edit did not contain a valid project.", {
+          includeSnapshot: true,
+          operationId: requestOperationId,
+        });
+        return;
+      }
+      if (message.baseSeq !== this.roomState.seq) {
+        this.sendError(connection, "That structural edit is based on an older room snapshot.", {
+          includeSnapshot: true,
+          operationId: requestOperationId,
+          scope: "room",
+        });
+        return;
+      }
+      nextProject = cloneProject(message.project);
+    }
     if (!isProject(nextProject)) {
-      this.sendError(connection, "That edit would make the room project invalid.", true);
+      this.sendError(connection, "That edit would make the room project invalid.", {
+        includeSnapshot: true,
+        operationId: requestOperationId,
+      });
       return;
     }
     const entry: StoredOperation = {
@@ -319,7 +499,7 @@ export class PixelRoom extends Server<RoomEnv> {
       beforeProject: cloneProject(beforeProject),
       afterProject: cloneProject(nextProject),
     };
-    await this.commitOperation(entry);
+    await this.commitOperation(entry, patch, connection, requestOperationId);
   }
 
   private async handleUndo(
@@ -332,17 +512,31 @@ export class PixelRoom extends Server<RoomEnv> {
       this.sendError(connection, "Join the room before changing its history.");
       return;
     }
+    const requestOperationId =
+      message.operationId.length > 0 && message.operationId.length <= MAX_ID_LENGTH
+        ? message.operationId
+        : undefined;
     const last = this.roomState.history[this.roomState.history.length - 1];
     if (!last || last.actorId !== state.clientId) {
-      this.sendError(connection, redo ? "Only your latest undo can be redone." : "Only your latest room edit can be undone.", true);
+      this.sendError(
+        connection,
+        redo ? "Only your latest undo can be redone." : "Only your latest room edit can be undone.",
+        { includeSnapshot: true, operationId: requestOperationId },
+      );
       return;
     }
     if (!redo && last.operationId !== message.operationId) {
-      this.sendError(connection, "Another collaborator edited after that change, so it is no longer undoable.", true);
+      this.sendError(connection, "Another collaborator edited after that change, so it is no longer undoable.", {
+        includeSnapshot: true,
+        operationId: requestOperationId,
+      });
       return;
     }
     if (redo && (last.kind !== "undo" || last.operationId !== message.operationId)) {
-      this.sendError(connection, "That undo is no longer the latest room action.", true);
+      this.sendError(connection, "That undo is no longer the latest room action.", {
+        includeSnapshot: true,
+        operationId: requestOperationId,
+      });
       return;
     }
 
@@ -357,10 +551,15 @@ export class PixelRoom extends Server<RoomEnv> {
       beforeProject: cloneProject(this.roomState.project),
       afterProject: cloneProject(nextProject),
     };
-    await this.commitOperation(entry);
+    await this.commitOperation(entry, null, connection, requestOperationId);
   }
 
-  private async commitOperation(entry: StoredOperation): Promise<void> {
+  private async commitOperation(
+    entry: StoredOperation,
+    patch: RoomPatch | null = null,
+    origin: Connection | null = null,
+    requestOperationId: string | undefined = entry.operationId,
+  ): Promise<void> {
     if (!this.roomState) return;
     const previousState = this.roomState;
     const nextState: StoredRoomState = {
@@ -373,11 +572,17 @@ export class PixelRoom extends Server<RoomEnv> {
     try {
       await this.persist();
     } catch {
-      this.roomState = previousState;
-      this.sendErrorToAll("The room could not save that edit. Please retry.");
+      if (this.roomState === nextState) this.roomState = previousState;
+      if (origin) {
+        this.sendError(origin, "The room could not save that edit. Please retry.", {
+          includeSnapshot: true,
+          operationId: requestOperationId,
+          scope: "request",
+        });
+      }
       return;
     }
-    this.sendOperation(entry);
+    this.sendOperation(entry, patch);
   }
 
   private sendWelcome(connection: Connection): void {
@@ -395,7 +600,10 @@ export class PixelRoom extends Server<RoomEnv> {
     );
   }
 
-  private sendOperation(entry: StoredOperation): void {
+  private sendOperation(entry: StoredOperation, patch: RoomPatch | null = null): void {
+    const operation = patch
+      ? { mode: "patch" as const, patch }
+      : { mode: "snapshot" as const, project: entry.afterProject };
     this.broadcast(
       JSON.stringify({
         type: "operation",
@@ -405,28 +613,31 @@ export class PixelRoom extends Server<RoomEnv> {
         actorId: entry.actorId,
         label: entry.label,
         kind: entry.kind,
-        project: entry.afterProject,
+        ...operation,
         ...(entry.undoOf ? { undoOf: entry.undoOf } : {}),
         ...(entry.redoOf ? { redoOf: entry.redoOf } : {}),
       }),
     );
   }
 
-  private sendError(connection: Connection, message: string, includeSnapshot = false): void {
+  private sendError(
+    connection: Connection,
+    message: string,
+    options: boolean | RoomErrorOptions = {},
+  ): void {
+    const normalized = typeof options === "boolean" ? { includeSnapshot: options } : options;
     connection.send(
       JSON.stringify({
         type: "room_error",
         protocol: ROOM_PROTOCOL_VERSION,
+        scope: normalized.scope ?? "request",
+        ...(normalized.operationId ? { operationId: normalized.operationId } : {}),
         message,
-        ...(includeSnapshot && this.roomState
+        ...(normalized.includeSnapshot && this.roomState
           ? { project: this.roomState.project, seq: this.roomState.seq }
           : {}),
       }),
     );
-  }
-
-  private sendErrorToAll(message: string): void {
-    for (const connection of this.getConnections()) this.sendError(connection, message, true);
   }
 
   private presences(): RoomPresence[] {
@@ -455,8 +666,22 @@ export class PixelRoom extends Server<RoomEnv> {
 
 export default {
   async fetch(request: Request, env: RoomEnv): Promise<Response> {
+    const allowedOrigin = env.ROOM_ALLOWED_ORIGIN?.trim() || null;
+    const cors = allowedOrigin
+      ? {
+          "Access-Control-Allow-Origin": allowedOrigin,
+          "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "86400",
+          Vary: "Origin",
+        }
+      : false;
     return (
-      (await routePartykitRequest<RoomEnv>(request, env, { cors: true })) ??
+      (await routePartykitRequest<RoomEnv>(request, env, {
+        cors,
+        onBeforeConnect: (req) => originGuard(req, allowedOrigin),
+        onBeforeRequest: (req) => originGuard(req, allowedOrigin),
+      })) ??
       new Response("Pixel room server", { status: 404 })
     );
   },

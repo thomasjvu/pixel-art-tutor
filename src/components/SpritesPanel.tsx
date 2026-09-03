@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../store/projectStore";
+import { Icon } from "./Icon";
 import { SpriteThumb } from "./SpriteThumb";
 import type { Sprite, SpriteKind } from "../types";
 import { downloadText } from "../engine/exportImage";
@@ -220,8 +221,8 @@ function SpriteRow({
         aria-label={`Rename ${sprite.name}`}
       />
       {canDelete && (
-        <button className="icon-btn" title="Delete sprite" onClick={onDelete}>
-          ×
+        <button className="icon-btn" title="Delete sprite" aria-label={`Delete ${sprite.name}`} onClick={onDelete}>
+          <Icon icon="mingcute:close-circle" />
         </button>
       )}
     </div>

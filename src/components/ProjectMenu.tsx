@@ -13,6 +13,7 @@ import {
   unitySpriteManifest,
   unityTextureMeta,
 } from "../engine/exportImage";
+import { buildGamePackManifest, gamePackSpriteFiles } from "../engine/exportManifest";
 import { MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
 
 function closeMenu(target: HTMLElement) {
@@ -31,11 +32,23 @@ export function ProjectMenu() {
   const roomStatus = useUi((s) => s.roomStatus);
   const roomCanUndo = useUi((s) => s.roomCanUndo);
   const roomCanRedo = useUi((s) => s.roomCanRedo);
+  const storageStatus = useStore((s) => s.storageStatus);
   const resetProject = useStore((s) => s.resetProject);
   const showGrid = useEditor((s) => s.showGrid);
   const setShowGrid = useEditor((s) => s.setShowGrid);
   const onion = useEditor((s) => s.onion);
   const toggleOnion = useEditor((s) => s.toggleOnion);
+  const onionAvailable = useStore((s) => (s.activeSprite()?.frames.length ?? 0) > 1);
+  const storageHint =
+    storageStatus === "saved"
+      ? "Autosaved locally"
+      : storageStatus === "pending"
+        ? "Saving locally…"
+        : storageStatus === "too_large"
+          ? "Local save needs a backup"
+          : storageStatus === "unavailable"
+            ? "Local autosave unavailable"
+            : "Local save not yet complete";
 
   function exportProject() {
     const state = useStore.getState();
@@ -86,6 +99,30 @@ export function ProjectMenu() {
       unitySpriteManifest(sprite, useEditor.getState().fps),
       `${stem}.unity-sprites.json`,
     );
+  }
+
+  function exportGamePack() {
+    const state = useStore.getState();
+    const files = gamePackSpriteFiles(state.project);
+    downloadText(
+      buildGamePackManifest(state.project, useEditor.getState().fps),
+      `${spriteFileStem(state.project.name)}.pixel-pack.json`,
+    );
+    for (const { sprite, stem } of files) {
+      downloadCanvas(
+        renderSpriteToCanvas(sprite, {
+          allFrames: true,
+          scale: 1,
+          palette: state.project.palette,
+        }),
+        `${stem}-sheet.png`,
+      );
+    }
+    useUi.getState().pushLog({
+      tool: "export_game_pack",
+      summary: `Downloaded manifest and ${files.length} sprite sheet${files.length === 1 ? "" : "s"}`,
+      source: "app",
+    });
   }
 
   function onProjectImport(file: File | undefined) {
@@ -272,6 +309,7 @@ export function ProjectMenu() {
             <button
               className={showGrid ? "menu-item checked" : "menu-item"}
               onClick={() => setShowGrid(!showGrid)}
+              aria-pressed={showGrid}
             >
               <Icon icon="mingcute:grid-2" />
               <span>Pixel grid</span>
@@ -279,7 +317,10 @@ export function ProjectMenu() {
             </button>
             <button
               className={onion ? "menu-item checked" : "menu-item"}
+              disabled={!onionAvailable}
               onClick={toggleOnion}
+              title={onionAvailable ? "Toggle onion skin" : "Add another frame to use onion skin"}
+              aria-pressed={onion}
             >
               <Icon icon="mingcute:layers" />
               <span>Onion skin</span>
@@ -320,11 +361,21 @@ export function ProjectMenu() {
               <span>Unity pack</span>
               <span className="file-kind">PNG + META</span>
             </button>
+            <div className="menu-divider" />
+            <button className="menu-item" onClick={exportGamePack}>
+              <Icon icon="mingcute:box-3" />
+              <span>Entire game pack</span>
+              <span className="file-kind">JSON + PNGs</span>
+            </button>
+            <p className="menu-note">Downloads one manifest and one horizontal sheet per sprite.</p>
           </div>
         </details>
       </div>
       <div className="menu-hint">
-        <span className="menu-dot" /> Autosaved locally
+        <span
+          className="menu-dot"
+          style={{ background: storageStatus === "saved" ? "var(--mint)" : "var(--red)" }}
+        /> {storageHint}
         <span className="menu-divider-vertical" />
         <span>Right-click erases</span>
       </div>

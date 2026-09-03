@@ -3,7 +3,7 @@
 ## What this is
 
 A WebMCP pixel-art studio: humans and AI agents co-edit one canvas in real time.
-The agent surface is 16 imperative tools registered in `src/webmcp/registerTools.ts`, plus
+The agent surface is 21 imperative tools registered in `src/webmcp/registerTools.ts`, plus
 1 declarative form tool in `src/components/SpritesPanel.tsx`.
 
 ## Commands

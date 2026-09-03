@@ -95,17 +95,26 @@ export function CanvasStage() {
     const frame = sprite.frames[activeFrameIndex];
     if (!frame) return;
 
-    // onion skin: previous frame ghost
-    if (onion && activeFrameIndex > 0) {
-      const prev = sprite.frames[activeFrameIndex - 1];
-      ctx.globalAlpha = 0.22;
-      for (let y = 0; y < sprite.height; y++)
-        for (let x = 0; x < sprite.width; x++) {
-          const p = prev.pixels[y * sprite.width + x];
-          if (p === TRANSPARENT || !project.palette[p]) continue;
-          ctx.fillStyle = project.palette[p];
-          ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
-        }
+    // Onion skin shows both adjacent cels, so it remains useful on the first
+    // and last frames instead of silently doing nothing at the timeline edges.
+    if (onion && sprite.frames.length > 1) {
+      const ghostFrames = [
+        activeFrameIndex > 0 ? { frame: sprite.frames[activeFrameIndex - 1], alpha: 0.24 } : null,
+        activeFrameIndex < sprite.frames.length - 1
+          ? { frame: sprite.frames[activeFrameIndex + 1], alpha: 0.15 }
+          : null,
+      ];
+      for (const ghost of ghostFrames) {
+        if (!ghost) continue;
+        ctx.globalAlpha = ghost.alpha;
+        for (let y = 0; y < sprite.height; y++)
+          for (let x = 0; x < sprite.width; x++) {
+            const p = ghost.frame.pixels[y * sprite.width + x];
+            if (p === TRANSPARENT || !project.palette[p]) continue;
+            ctx.fillStyle = project.palette[p];
+            ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+          }
+      }
       ctx.globalAlpha = 1;
     }
 
@@ -138,8 +147,8 @@ export function CanvasStage() {
       ctx.globalAlpha = 1;
     }
 
-    if (showGrid && zoom >= 10) {
-      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    if (showGrid) {
+      ctx.strokeStyle = "rgba(32,35,59,0.28)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let x = 0; x <= sprite.width; x++) {
@@ -151,7 +160,7 @@ export function CanvasStage() {
         ctx.lineTo(canvas.width, y * zoom + 0.5);
       }
       ctx.stroke();
-      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
       ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
     }
   }, [sprite, project.palette, activeFrameIndex, zoom, onion, showGrid, checker, agentPresence]);
@@ -190,7 +199,6 @@ export function CanvasStage() {
     <div className="stage">
       <div className="stage-header">
         <div>
-          <span className="eyebrow">Canvas</span>
           <strong>{sprite.name}</strong>
         </div>
         <span className="stage-size">{sprite.width} × {sprite.height} px</span>
@@ -279,8 +287,10 @@ export function CanvasStage() {
         <div className="stage-actions">
           <button
             className={onion ? "hud-btn active" : "hud-btn"}
+            disabled={sprite.frames.length < 2}
             onClick={() => useEditor.getState().toggleOnion()}
-            title="Onion skin (ghost previous frame)"
+            title={sprite.frames.length < 2 ? "Add another frame to use onion skin" : "Toggle onion skin"}
+            aria-pressed={onion}
           >
             Onion
           </button>

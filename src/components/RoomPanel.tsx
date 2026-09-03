@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { roomClient } from "../realtime/roomClient";
+import { useStore } from "../store/projectStore";
 import { useUi } from "../store/uiStore";
+import { downloadText, spriteFileStem } from "../engine/exportImage";
+import { Icon } from "./Icon";
 
 function statusLabel(status: ReturnType<typeof useUi.getState>["roomStatus"]): string {
   switch (status) {
@@ -23,6 +26,7 @@ export function RoomPanel() {
   const roomId = useUi((state) => state.roomId);
   const roomStatus = useUi((state) => state.roomStatus);
   const roomError = useUi((state) => state.roomError);
+  const roomSyncBlocked = useUi((state) => state.roomSyncBlocked);
   const roomPeers = useUi((state) => state.roomPeers);
   const peers = Object.values(roomPeers);
   const roomHost = useUi((state) => state.roomHost);
@@ -32,6 +36,14 @@ export function RoomPanel() {
   const [copied, setCopied] = useState(false);
   const roomInput = roomDraft ?? roomId ?? "";
   const nameInput = nameDraft ?? (displayName || roomClient.displayName);
+
+  function downloadRoomBackup() {
+    const state = useStore.getState();
+    downloadText(
+      state.exportProject(),
+      spriteFileStem(state.project.name) + "-room-backup.pixeltutor.json",
+    );
+  }
 
   async function copyShareLink() {
     const link = roomClient.shareUrl();
@@ -97,7 +109,6 @@ export function RoomPanel() {
       {roomId && (
         <div className="room-card">
           <div className="room-card-heading">
-            <span className="eyebrow">Room</span>
             <code>{roomId}</code>
           </div>
           <p className="hint">
@@ -111,13 +122,15 @@ export function RoomPanel() {
         <h4>In the studio</h4>
         <div className="people-list">
           <div className="person-row self">
-            <span className="person-avatar" style={{ background: "#4daa91" }}>◎</span>
+            <span className="person-avatar" style={{ background: "#4daa91" }}><Icon icon="mingcute:group" /></span>
             <span className="person-name">{nameInput.trim() || "You"}</span>
             <span className="person-state">you</span>
           </div>
           {peers.map((peer) => (
             <div className="person-row" key={peer.id}>
-              <span className="person-avatar" style={{ background: peer.color }}>{peer.kind === "agent" ? "✦" : "•"}</span>
+              <span className="person-avatar" style={{ background: peer.color }}>
+                <Icon icon={peer.kind === "agent" ? "mingcute:bot" : "mingcute:group"} />
+              </span>
               <span className="person-name">{peer.name}</span>
               <span className="person-state">{peer.status === "idle" ? "here" : peer.status}</span>
             </div>
@@ -131,7 +144,18 @@ export function RoomPanel() {
           <code>VITE_PARTY_HOST=http://127.0.0.1:1999</code> for shared rooms.
         </p>
       )}
-      {roomError && <p className="room-error">{roomError}</p>}
+      {roomSyncBlocked && (
+        <div className="room-error" role="alert">
+          <strong>Room sync is paused.</strong>{" "}
+          This project is too large for a room message. Download a backup before leaving or reducing it.
+          <div>
+            <button className="text-btn" type="button" onClick={downloadRoomBackup}>
+              Download current project
+            </button>
+          </div>
+        </div>
+      )}
+      {roomError && !roomSyncBlocked && <p className="room-error">{roomError}</p>}
     </div>
   );
 }

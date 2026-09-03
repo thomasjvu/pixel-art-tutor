@@ -685,7 +685,7 @@ export function registerTutorTools(): AbortController {
       name: "get_tilemap",
       title: "Read tilemap",
       description:
-        "Read the tilemap grid as ASCII rows where each character maps to a tileset sprite via the returned legend.",
+        "Read the tilemap grid as ASCII rows where each token maps to a tileset sprite via the returned legend. Maps with more than 64 tiles use two-character tokens and return tokenWidth: 2.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       execute: () => {
@@ -693,14 +693,20 @@ export function registerTutorTools(): AbortController {
         const tm = st.project.tilemap;
         if (!tm) return { ok: false, error: "no tilemap exists yet; call ensure_tilemap first to create one" };
         const tiles = st.project.sprites.filter((sp) => sp.kind === "tile");
+        const tokenWidth = tiles.length > PIXEL_SYMBOLS.length ? 2 : 1;
+        const tokenFor = (index: number): string =>
+          tokenWidth === 1
+            ? PIXEL_SYMBOLS[(index + 10) % PIXEL_SYMBOLS.length]!
+            : `${PIXEL_SYMBOLS[Math.floor(index / PIXEL_SYMBOLS.length)]!}${PIXEL_SYMBOLS[index % PIXEL_SYMBOLS.length]!}`;
         const charFor = new Map<string, string>();
-        tiles.forEach((t, i) => charFor.set(t.id, PIXEL_SYMBOLS[(i + 10) % PIXEL_SYMBOLS.length]!));
+        tiles.forEach((t, i) => charFor.set(t.id, tokenFor(i)));
+        const transparentChar = tokenWidth === 1 ? "." : "..";
         const rowsAscii: string[] = [];
         for (let y = 0; y < tm.rows; y++) {
           let row = "";
           for (let x = 0; x < tm.cols; x++) {
             const id = tm.cells[y * tm.cols + x];
-            row += id ? charFor.get(id) ?? "?" : ".";
+            row += id ? charFor.get(id) ?? "??" : transparentChar;
           }
           rowsAscii.push(row);
         }
@@ -709,8 +715,9 @@ export function registerTutorTools(): AbortController {
           ok: true,
           cols: tm.cols,
           rows: tm.rows,
-          transparentChar: ".",
-          legend: tiles.map((t) => ({ char: charFor.get(t.id), id: t.id, name: t.name })),
+          tokenWidth,
+          transparentChar,
+          legend: tiles.map((t) => ({ char: charFor.get(t.id) ?? "??", id: t.id, name: t.name })),
           rows_ascii: rowsAscii,
         };
       },

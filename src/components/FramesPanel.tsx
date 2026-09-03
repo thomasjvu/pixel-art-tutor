@@ -1,4 +1,5 @@
 import { useStore } from "../store/projectStore";
+import { Icon } from "./Icon";
 import { SpriteThumb } from "./SpriteThumb";
 
 export function FramesPanel() {
@@ -24,15 +25,21 @@ export function FramesPanel() {
               <button
                 className="frame-del"
                 title="Delete frame"
+                aria-label={`Delete frame ${i + 1}`}
                 onClick={() => deleteFrame(i)}
               >
-                ×
+                <Icon icon="mingcute:close-circle" />
               </button>
             )}
           </div>
         ))}
-        <button className="frame-add" onClick={() => addFrame()} title="Duplicate last frame">
-          +
+        <button
+          className="frame-add"
+          onClick={() => addFrame()}
+          title="Duplicate last frame"
+          aria-label="Duplicate last frame"
+        >
+          <Icon icon="mingcute:add" />
         </button>
       </div>
       <p className="hint">

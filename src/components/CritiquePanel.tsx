@@ -29,7 +29,6 @@ export function CritiquePanel() {
       <div className="critique-intro">
         <div className="critique-spark"><Icon icon="mingcute:bulb-2" /></div>
         <div>
-          <span className="eyebrow">Friendly feedback</span>
           <h2>Studio check</h2>
         </div>
       </div>
@@ -54,7 +53,6 @@ export function CritiquePanel() {
               </div>
             </div>
             <div>
-              <span className="eyebrow">Pixel vibe</span>
               <strong>{report.score >= 80 ? "Super cozy" : report.score >= 60 ? "Good bones" : "Ready to tune"}</strong>
               <p>{report.findings.length ? `${report.findings.length} little notes to explore` : "No notes — ship this tiny hero!"}</p>
             </div>

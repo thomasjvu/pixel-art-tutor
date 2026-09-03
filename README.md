@@ -117,6 +117,29 @@ project snapshot and recent edit history, broadcasts presence over WebSockets, m
 pixel edits, and only allows a collaborator to undo their latest room operation. Deploy the room
 worker with `npm run room:deploy`, then set `VITE_PARTY_HOST` to its HTTPS host for production.
 
+Shared rooms are prototype bearer-link rooms: anyone who has a room URL can see and edit that room.
+Display names and colors are presence labels, not verified identity, and there is no authentication or
+authorization in this demo. Use them with trusted collaborators only; production deployments should
+add server-side authentication and room authorization before private or sensitive artwork is shared.
+New rooms use high-entropy Web Crypto IDs when the browser provides Web Crypto; local/demo runtimes
+without it fall back to time/random IDs and must not treat those links as private. Existing short room
+links remain valid. The worker limits each room to 16 connections, each connection to 30 edit/undo/redo
+messages per 10 seconds and
+120 presence messages per 10 seconds, and each message to 4,000,000 characters. These are abuse
+guardrails, not access control. To restrict browser origins, set the worker variable
+`ROOM_ALLOWED_ORIGIN` to the exact deployed app origin; local WebSocket development does not require
+that variable, but a local HTTP origin can be configured explicitly when needed.
+
+### Game-engine handoff
+
+The **Entire game pack** action in the Export menu downloads a versioned
+`<project-stem>.pixel-pack.json` manifest and one horizontal `<sprite-stem>-sheet.png` per sprite.
+Each sheet contains one native-size frame after another; the manifest includes the palette, FPS,
+frame rectangles, sprite IDs, and tilemap cells. Duplicate sprite names receive deterministic filename
+suffixes so sheets do not overwrite one another. The manifest is engine-neutral: place generated
+Godot sheets beside the optional `.tres` output in `res://art/`, or keep Unity metadata beside its
+matching PNG. It does not create a complete Godot project, Unity scene, or Animator.
+
 ### Example prompts to try
 
 - *"Read my slime sprite and critique it, then fix the issues you find."*

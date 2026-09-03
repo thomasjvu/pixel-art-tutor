@@ -20,7 +20,6 @@ export function TimelinePanel() {
   if (!sprite) {
     return (
       <section className="timeline-panel timeline-empty">
-        <span className="eyebrow">Animation</span>
         <p>Select a sprite to start animating.</p>
       </section>
     );
@@ -34,7 +33,6 @@ export function TimelinePanel() {
     <section className="timeline-panel" aria-label="Animation timeline">
       <div className="timeline-header">
         <div className="timeline-heading">
-          <span className="eyebrow">Animation</span>
           <h2>
             Timeline <span>{frameCount} cels</span>
           </h2>
@@ -68,8 +66,10 @@ export function TimelinePanel() {
           </label>
           <button
             className={onion ? "timeline-tool active" : "timeline-tool"}
+            disabled={frameCount < 2}
             onClick={toggleOnion}
-            title="Toggle onion skin"
+            title={frameCount < 2 ? "Add another frame to use onion skin" : "Toggle onion skin"}
+            aria-pressed={onion}
           >
             <Icon icon="mingcute:layers" />
             <span>Onion</span>
@@ -123,7 +123,7 @@ export function TimelinePanel() {
                     title={`Delete frame ${index + 1}`}
                     aria-label={`Delete frame ${index + 1}`}
                   >
-                    ×
+                    <Icon icon="mingcute:close-circle" />
                   </button>
                 )}
               </div>

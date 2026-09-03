@@ -16,6 +16,7 @@ import {
 } from "../engine/pixels";
 import { blankProject, createStarterProject } from "../engine/seed";
 import { sanitizeProject } from "../engine/validate";
+import { createUniqueId } from "./projectIds";
 import {
   MAX_DIMENSION,
   MAX_FRAMES_PER_SPRITE,
@@ -27,7 +28,14 @@ import {
   MAX_TOTAL_PIXEL_CELLS,
   projectPixelCells,
 } from "../projectLimits";
-import type { ProjectChange } from "../realtime/projectEvents";
+import {
+  mergeProjectChangeHints,
+  MAX_PROJECT_CHANGE_HINT_CELLS,
+  type ProjectChange,
+  type ProjectChangeHint,
+  type ProjectPixelHint,
+  type ProjectTileHint,
+} from "../realtime/projectEvents";
 
 export type TransformOp =
   | "flip_h"
@@ -38,10 +46,10 @@ export type TransformOp =
 
 const HISTORY_LIMIT = 60;
 const STORAGE_KEY = "pixel-art-tutor.project.v1";
-
-function uid(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
-}
+const STORAGE_RECOVERY_KEY = `${STORAGE_KEY}.recovery.v1`;
+let storedRecoveryRaw: string | null = null;
+export type StorageStatus = "not_saved" | "pending" | "saved" | "unavailable" | "too_large";
+let initialStorageStatus: StorageStatus = "not_saved";
 
 function cloneProject(p: Project): Project {
   return {
@@ -55,13 +63,78 @@ function cloneProject(p: Project): Project {
   };
 }
 
+function cloneProjectFrame(p: Project, spriteId: string, frameIndex: number): Project {
+  return {
+    ...p,
+    sprites: p.sprites.map((sprite) =>
+      sprite.id !== spriteId
+        ? sprite
+        : {
+            ...sprite,
+            frames: sprite.frames.map((frame, index) =>
+              index === frameIndex ? { ...frame, pixels: [...frame.pixels] } : frame,
+            ),
+          },
+    ),
+  };
+}
+
+function preserveRejectedStoredProject(raw: string): void {
+  storedRecoveryRaw = raw.slice(0, MAX_PROJECT_JSON_LENGTH);
+  try {
+    localStorage.setItem(STORAGE_RECOVERY_KEY, storedRecoveryRaw);
+  } catch {
+    /* Keep the in-memory copy when storage is unavailable or full. */
+  }
+  console.warn(`Saved project data was not usable; a recovery copy is available as ${STORAGE_RECOVERY_KEY}.`);
+}
+
 function loadStored(): Project | null {
   try {
+    storedRecoveryRaw = localStorage.getItem(STORAGE_RECOVERY_KEY);
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw || raw.length > MAX_PROJECT_JSON_LENGTH) return null;
-    return sanitizeProject(JSON.parse(raw));
+    if (!raw) return null;
+    if (raw.length > MAX_PROJECT_JSON_LENGTH) {
+      preserveRejectedStoredProject(raw);
+      initialStorageStatus = "unavailable";
+      return null;
+    }
+    const project = sanitizeProject(JSON.parse(raw));
+    if (!project) {
+      preserveRejectedStoredProject(raw);
+      initialStorageStatus = "unavailable";
+    } else {
+      initialStorageStatus = "saved";
+    }
+    return project;
   } catch {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) preserveRejectedStoredProject(raw);
+    } catch {
+      /* localStorage may be unavailable in a private or embedded browser */
+    }
+    initialStorageStatus = "unavailable";
     return null;
+  }
+}
+
+export function storedProjectRecovery(): string | null {
+  if (storedRecoveryRaw) return storedRecoveryRaw;
+  try {
+    storedRecoveryRaw = localStorage.getItem(STORAGE_RECOVERY_KEY);
+  } catch {
+    /* localStorage may be unavailable in a private or embedded browser */
+  }
+  return storedRecoveryRaw;
+}
+
+function clearStoredProjectRecovery(): void {
+  storedRecoveryRaw = null;
+  try {
+    localStorage.removeItem(STORAGE_RECOVERY_KEY);
+  } catch {
+    /* localStorage may be unavailable in a private or embedded browser */
   }
 }
 
@@ -101,6 +174,16 @@ export interface ResolveTarget {
   frameIndex: number;
 }
 
+function cellHint(
+  pixels: ProjectPixelHint[] = [],
+  tiles: ProjectTileHint[] = [],
+): ProjectChangeHint {
+  if (pixels.length + tiles.length > MAX_PROJECT_CHANGE_HINT_CELLS) {
+    return { kind: "unknown" };
+  }
+  return { kind: "cells", pixels, tiles };
+}
+
 interface ProjectState {
   project: Project;
   activeSpriteId: string;
@@ -108,6 +191,10 @@ interface ProjectState {
   selectedTileId: string | null;
   past: Project[];
   future: Project[];
+  storageRecovery: boolean;
+  storageStatus: StorageStatus;
+  storageError: string | null;
+  lastSavedAt: number | null;
 
   activeSprite(): Sprite;
   resolveTarget(spriteId?: string, frameIndex?: number): ResolveTarget | { error: string };
@@ -156,6 +243,7 @@ interface ProjectState {
   redo(): void;
   loadProject(p: unknown): { ok: true } | { ok: false; error: string };
   applyRoomProject(p: Project): boolean;
+  dismissStorageRecovery(): void;
   resetProject(kind: "starter" | "blank"): void;
   exportProject(): string;
 }
@@ -163,18 +251,21 @@ interface ProjectState {
 export const useStore = create<ProjectState>()((set, get) => {
   let strokeActive = false;
   let strokeBaseProject: Project | null = null;
+  let strokeHint: ProjectChangeHint = cellHint();
 
   function finishStroke(label = "Paint stroke") {
     if (!strokeActive) return;
     strokeActive = false;
     const previousProject = strokeBaseProject;
     strokeBaseProject = null;
+    const hint = strokeHint;
+    strokeHint = cellHint();
     const project = get().project;
     if (!previousProject || projectsEqual(previousProject, project)) return;
     const { past } = get();
     set({ past: [...past.slice(-HISTORY_LIMIT), previousProject], future: [] });
     scheduleSave();
-    notifyProjectChange({ project, previousProject, source: "local", label });
+    notifyProjectChange({ project, previousProject, source: "local", label, hint });
   }
 
   function cancelStroke() {
@@ -182,6 +273,7 @@ export const useStore = create<ProjectState>()((set, get) => {
     strokeActive = false;
     const previousProject = strokeBaseProject;
     strokeBaseProject = null;
+    strokeHint = cellHint();
     if (previousProject) set({ project: previousProject });
   }
 
@@ -191,15 +283,18 @@ export const useStore = create<ProjectState>()((set, get) => {
     extra?: Partial<ProjectState>,
     source: ProjectChange["source"] = "local",
     label = "Edit",
+    hint: ProjectChangeHint = { kind: "unknown" },
   ) {
     const { project, past } = get();
-    if (projectsEqual(project, next)) {
-      if (extra) set(extra);
+    if (strokeActive) {
+      // History and room notification are finalized once at endStroke. Avoid
+      // serializing the full project for every pointermove in the stroke.
+      strokeHint = mergeProjectChangeHints(strokeHint, hint);
+      set({ project: next, ...extra });
       return;
     }
-    if (strokeActive) {
-      // history and the room event are finalized once at endStroke
-      set({ project: next, ...extra });
+    if (projectsEqual(project, next)) {
+      if (extra) set(extra);
       return;
     }
     set({
@@ -209,18 +304,33 @@ export const useStore = create<ProjectState>()((set, get) => {
       ...extra,
     });
     scheduleSave();
-    notifyProjectChange({ project: next, previousProject: project, source, label });
+    notifyProjectChange({ project: next, previousProject: project, source, label, hint });
   }
 
   function scheduleSave() {
     if (saveTimer) clearTimeout(saveTimer);
+    set({ storageStatus: "pending", storageError: null });
     saveTimer = setTimeout(() => {
+      saveTimer = null;
       try {
         const serialized = JSON.stringify(get().project);
-        if (serialized.length > MAX_PROJECT_JSON_LENGTH) return;
+        if (serialized.length > MAX_PROJECT_JSON_LENGTH) {
+          set({
+            storageStatus: "too_large",
+            storageError:
+              "This project is larger than the " +
+              MAX_PROJECT_JSON_LENGTH.toLocaleString() +
+              " character local save limit.",
+          });
+          return;
+        }
         localStorage.setItem(STORAGE_KEY, serialized);
+        set({ storageStatus: "saved", storageError: null, lastSavedAt: Date.now() });
       } catch {
-        /* storage full or unavailable */
+        set({
+          storageStatus: "unavailable",
+          storageError: "Local storage is unavailable or full.",
+        });
       }
     }, 400);
   }
@@ -232,11 +342,16 @@ export const useStore = create<ProjectState>()((set, get) => {
     selectedTileId: null,
     past: [],
     future: [],
+    storageRecovery: Boolean(storedRecoveryRaw),
+    storageStatus: initialStorageStatus,
+    storageError: null,
+    lastSavedAt: initialStorageStatus === "saved" ? Date.now() : null,
 
     beginStroke() {
       if (strokeActive) return;
       const { project } = get();
       strokeBaseProject = project;
+      strokeHint = cellHint();
       strokeActive = true;
     },
 
@@ -281,23 +396,29 @@ export const useStore = create<ProjectState>()((set, get) => {
       if ("error" in t) return;
       const { sprite, frameIndex } = t;
       if (!inBounds(x, y, sprite.width, sprite.height)) return;
-      const next = cloneProject(get().project);
+      const next = cloneProjectFrame(get().project, sprite.id, frameIndex);
       const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
+      if (frame.pixels[y * sprite.width + x] === colorIdx) return;
       frame.pixels[y * sprite.width + x] = colorIdx;
-      commit(next);
+      commit(next, undefined, "local", "Edit", cellHint([{ spriteId: sprite.id, frameIndex, x, y }]));
     },
 
     drawLine(from, to, colorIdx) {
       const t = get().resolveTarget();
       if ("error" in t) return;
       const { sprite, frameIndex } = t;
-      const next = cloneProject(get().project);
+      const next = cloneProjectFrame(get().project, sprite.id, frameIndex);
       const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[frameIndex];
+      const pixels: ProjectPixelHint[] = [];
       for (const [x, y] of bresenhamLine(from[0], from[1], to[0], to[1])) {
-        if (inBounds(x, y, sprite.width, sprite.height))
+        if (inBounds(x, y, sprite.width, sprite.height)) {
+          if (frame.pixels[y * sprite.width + x] !== colorIdx) {
+            pixels.push({ spriteId: sprite.id, frameIndex, x, y });
+          }
           frame.pixels[y * sprite.width + x] = colorIdx;
+        }
       }
-      commit(next);
+      if (pixels.length > 0) commit(next, undefined, "local", "Edit", cellHint(pixels));
     },
 
     applyPixelChanges(changes, spriteId, frameIndex, allFrames) {
@@ -309,6 +430,7 @@ export const useStore = create<ProjectState>()((set, get) => {
       const target = next.sprites.find((s) => s.id === sprite.id)!;
       let applied = 0;
       const addedColors: number[] = [];
+      const changedPixels: ProjectPixelHint[] = [];
       const frameIdxs = allFrames
         ? target.frames.map((_, i) => i)
         : [fi];
@@ -325,10 +447,16 @@ export const useStore = create<ProjectState>()((set, get) => {
           const pixelIndex = ch.y * target.width + ch.x;
           if (frame.pixels[pixelIndex] === colorIdx) continue;
           frame.pixels[pixelIndex] = colorIdx;
+          changedPixels.push({
+            spriteId: sprite.id,
+            frameIndex: fi,
+            x: ch.x,
+            y: ch.y,
+          });
           applied++;
         }
       }
-      if (applied > 0) commit(next);
+      if (applied > 0) commit(next, undefined, "local", "Edit", cellHint(changedPixels));
       return { applied, addedColors };
     },
 
@@ -345,6 +473,7 @@ export const useStore = create<ProjectState>()((set, get) => {
       const colorIdx = resolved.index;
       const fis = allFrames ? target.frames.map((_, i) => i) : [fi];
       let count = 0;
+      const changedPixels: ProjectPixelHint[] = [];
       for (const idx of fis) {
         const frame = target.frames[idx];
         if (!frame) continue;
@@ -353,10 +482,16 @@ export const useStore = create<ProjectState>()((set, get) => {
             const pixelIndex = yy * target.width + xx;
             if (frame.pixels[pixelIndex] === colorIdx) continue;
             frame.pixels[pixelIndex] = colorIdx;
+            changedPixels.push({
+              spriteId: sprite.id,
+              frameIndex: idx,
+              x: xx,
+              y: yy,
+            });
             count++;
           }
       }
-      if (count > 0) commit(next);
+      if (count > 0) commit(next, undefined, "local", "Edit", cellHint(changedPixels));
       return count;
     },
 
@@ -366,10 +501,23 @@ export const useStore = create<ProjectState>()((set, get) => {
       const { sprite, frameIndex: fi } = t;
       const next = cloneProject(get().project);
       const frame = next.sprites.find((s) => s.id === sprite.id)!.frames[fi];
+      const previousFrame = sprite.frames[fi]!;
       const resolved = resolveColorInto(color, next);
       if ("error" in resolved) return { error: resolved.error };
       frame.pixels = floodFill(frame.pixels, sprite.width, sprite.height, x, y, resolved.index);
-      commit(next);
+      const changedPixels: ProjectPixelHint[] = [];
+      for (let index = 0; index < frame.pixels.length; index++) {
+        if (previousFrame.pixels[index] === frame.pixels[index]) continue;
+        changedPixels.push({
+          spriteId: sprite.id,
+          frameIndex: fi,
+          x: index % sprite.width,
+          y: Math.floor(index / sprite.width),
+        });
+      }
+      if (changedPixels.length > 0) {
+        commit(next, undefined, "local", "Edit", cellHint(changedPixels));
+      }
     },
 
     clearFrame(spriteId, frameIndex) {
@@ -378,8 +526,21 @@ export const useStore = create<ProjectState>()((set, get) => {
       const { sprite, frameIndex: fi } = t;
       const next = cloneProject(get().project);
       const target = next.sprites.find((s) => s.id === sprite.id)!;
+      const previousFrame = sprite.frames[fi]!;
       target.frames[fi].pixels = emptyPixels(target.width, target.height);
-      commit(next);
+      const changedPixels: ProjectPixelHint[] = [];
+      for (let index = 0; index < previousFrame.pixels.length; index++) {
+        if (previousFrame.pixels[index] === TRANSPARENT) continue;
+        changedPixels.push({
+          spriteId: sprite.id,
+          frameIndex: fi,
+          x: index % sprite.width,
+          y: Math.floor(index / sprite.width),
+        });
+      }
+      if (changedPixels.length > 0) {
+        commit(next, undefined, "local", "Edit", cellHint(changedPixels));
+      }
     },
 
     transform(op, opts) {
@@ -474,7 +635,7 @@ export const useStore = create<ProjectState>()((set, get) => {
         return { error: `palette is full (${MAX_PALETTE_COLORS} colors max)` };
       const next = cloneProject(project);
       next.palette.push(normalized);
-      commit(next);
+      commit(next, undefined, "local", "Edit", { kind: "palette" });
       return { index: next.palette.length - 1 };
     },
 
@@ -505,15 +666,31 @@ export const useStore = create<ProjectState>()((set, get) => {
       }
       if (projectPixelCells(project) + w * h * frameCount > MAX_TOTAL_PIXEL_CELLS) return null;
       const next = cloneProject(project);
-      const id = uid("sprite");
+      const usedSpriteIds = new Set(project.sprites.map((sprite) => sprite.id));
+      const usedFrameIds = new Set(
+        project.sprites.flatMap((sprite) => sprite.frames.map((frame) => frame.id)),
+      );
+      let id: string;
+      let frameIds: string[];
+      try {
+        id = createUniqueId("sprite", usedSpriteIds);
+        usedSpriteIds.add(id);
+        frameIds = Array.from({ length: frameCount }, () => {
+          const frameId = createUniqueId("frame", usedFrameIds);
+          usedFrameIds.add(frameId);
+          return frameId;
+        });
+      } catch {
+        return null;
+      }
       const sprite: Sprite = {
         id,
         name: (typeof opts.name === "string" ? opts.name.trim() : "").slice(0, MAX_SPRITE_NAME_LENGTH) || "Untitled",
         width: w,
         height: h,
         kind,
-        frames: Array.from({ length: frameCount }, (_, i) => ({
-          id: `${id}-f${i}`,
+        frames: frameIds.map((frameId, i) => ({
+          id: frameId,
           pixels: i === 0 ? pixels : [...pixels],
         })),
       };
@@ -563,8 +740,24 @@ export const useStore = create<ProjectState>()((set, get) => {
       const frameCount = Math.max(1, sourceFrames.length);
       if (projectPixelCells(project) + width * height * frameCount > MAX_TOTAL_PIXEL_CELLS) return null;
       const next = cloneProject(project);
-      const id = uid("sprite");
-      const frames = sourceFrames.map((source) => {
+      const usedSpriteIds = new Set(project.sprites.map((sprite) => sprite.id));
+      const usedFrameIds = new Set(
+        project.sprites.flatMap((sprite) => sprite.frames.map((frame) => frame.id)),
+      );
+      let id: string;
+      let frameIds: string[];
+      try {
+        id = createUniqueId("sprite", usedSpriteIds);
+        usedSpriteIds.add(id);
+        frameIds = Array.from({ length: frameCount }, () => {
+          const frameId = createUniqueId("frame", usedFrameIds);
+          usedFrameIds.add(frameId);
+          return frameId;
+        });
+      } catch {
+        return null;
+      }
+      const frames = sourceFrames.map((source, index) => {
         const pixels = new Array<number>(width * height).fill(TRANSPARENT);
         const sourcePixels = Array.isArray(source) ? source : [];
         for (let i = 0; i < pixels.length; i++) {
@@ -580,9 +773,12 @@ export const useStore = create<ProjectState>()((set, get) => {
           }
           pixels[i] = paletteIndex;
         }
-        return { id: uid("frame"), pixels };
+        return { id: frameIds[index]!, pixels };
       });
-      const safeFrames = frames.length > 0 ? frames : [{ id: uid("frame"), pixels: emptyPixels(width, height) }];
+      const safeFrames =
+        frames.length > 0
+          ? frames
+          : [{ id: frameIds[0]!, pixels: emptyPixels(width, height) }];
       next.sprites.push({
         id,
         name: (typeof opts.name === "string" ? opts.name.trim() : "").slice(0, MAX_SPRITE_NAME_LENGTH) || "Imported sprite",
@@ -612,7 +808,15 @@ export const useStore = create<ProjectState>()((set, get) => {
         return -1;
       }
       const src = target.frames[Math.max(0, Math.min(srcIdx, target.frames.length - 1))];
-      const id = uid("frame");
+      const usedFrameIds = new Set(
+        get().project.sprites.flatMap((entry) => entry.frames.map((frame) => frame.id)),
+      );
+      let id: string;
+      try {
+        id = createUniqueId("frame", usedFrameIds);
+      } catch {
+        return -1;
+      }
       target.frames.push({ id, pixels: src ? [...src.pixels] : emptyPixels(target.width, target.height) });
       commit(next, { activeFrameIndex: target.frames.length - 1 });
       return target.frames.length - 1;
@@ -666,9 +870,11 @@ export const useStore = create<ProjectState>()((set, get) => {
       const tm = project.tilemap;
       if (!tm || !inBounds(x, y, tm.cols, tm.rows)) return false;
       if (spriteId !== null && !project.sprites.some((s) => s.id === spriteId && s.kind === "tile")) return false;
+      const cellIndex = y * tm.cols + x;
+      if (tm.cells[cellIndex] === spriteId) return true;
       const next = cloneProject(project);
-      next.tilemap!.cells[y * tm.cols + x] = spriteId;
-      commit(next);
+      next.tilemap!.cells[cellIndex] = spriteId;
+      commit(next, undefined, "local", "Edit", cellHint([], [{ index: cellIndex }]));
       return true;
     },
 
@@ -681,14 +887,16 @@ export const useStore = create<ProjectState>()((set, get) => {
       if (!r) return 0;
       const next = cloneProject(project);
       let count = 0;
+      const changedTiles: ProjectTileHint[] = [];
       for (let yy = r.y; yy < r.y + r.h; yy++)
         for (let xx = r.x; xx < r.x + r.w; xx++) {
           const cellIndex = yy * tm.cols + xx;
           if (next.tilemap!.cells[cellIndex] === spriteId) continue;
           next.tilemap!.cells[cellIndex] = spriteId;
+          changedTiles.push({ index: cellIndex });
           count++;
         }
-      if (count) commit(next);
+      if (count) commit(next, undefined, "local", "Edit", cellHint([], changedTiles));
       return count;
     },
 
@@ -762,6 +970,11 @@ export const useStore = create<ProjectState>()((set, get) => {
       scheduleSave();
       notifyProjectChange({ project, previousProject, source: "remote", label: "Room update" });
       return true;
+    },
+
+    dismissStorageRecovery() {
+      clearStoredProjectRecovery();
+      set({ storageRecovery: false });
     },
 
     resetProject(kind) {

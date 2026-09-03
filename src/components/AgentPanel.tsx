@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useUi } from "../store/uiStore";
+import { Icon } from "./Icon";
 
 const EXAMPLE_PROMPTS = [
   "Read my slime sprite and critique it, then fix the issues you find.",
@@ -50,7 +51,7 @@ export function AgentPanel() {
 
       {agentPresence && (
         <div className="agent-live-card">
-          <span className="agent-live-avatar">✦</span>
+          <span className="agent-live-avatar"><Icon icon="mingcute:bot" /></span>
           <div className="agent-live-copy">
             <strong>{agentPresence.name} · {agentPresence.status}</strong>
             <span>{agentPresence.message}</span>

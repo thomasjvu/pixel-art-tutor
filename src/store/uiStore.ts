@@ -54,6 +54,7 @@ interface UiState {
   roomHost: string | null;
   roomCanUndo: boolean;
   roomCanRedo: boolean;
+  roomSyncBlocked: boolean;
   setMcp(status: McpStatus, error?: string | null): void;
   setTools(tools: { name: string; description: string }[]): void;
   pushLog(entry: Omit<ToolLogEntry, "id" | "time">): void;
@@ -66,6 +67,7 @@ interface UiState {
     roomStatus?: RoomConnectionStatus;
     roomError?: string | null;
     roomSeq?: number;
+    roomSyncBlocked?: boolean;
     roomActorId?: string;
     roomDisplayName?: string;
     roomHost?: string | null;
@@ -90,6 +92,7 @@ export const useUi = create<UiState>()((set) => ({
   roomHost: null,
   roomCanUndo: false,
   roomCanRedo: false,
+  roomSyncBlocked: false,
   setMcp: (status, error = null) => set({ mcpStatus: status, mcpError: error }),
   setTools: (tools) => set({ registeredTools: tools }),
   pushLog: (entry) =>

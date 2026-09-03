@@ -156,7 +156,6 @@ function AppContent() {
         </div>
         <div className="header-divider" />
         <div className="project-title-wrap">
-          <span className="eyebrow">Project</span>
           <input
             className="project-title"
             ref={projectTitleRef}
@@ -210,10 +209,9 @@ function AppContent() {
         <aside className="sidebar">
           <div className="sidebar-heading">
             <div>
-              <span className="eyebrow">Panels</span>
               <strong>Inspector</strong>
             </div>
-            <span className="dock-grip" aria-hidden="true">•••</span>
+            <span className="dock-grip" aria-hidden="true"><Icon icon="mingcute:more-2" /></span>
           </div>
           <nav className="tabs" role="tablist" aria-label="Studio panels">
             {TABS.map((item) => (
@@ -259,7 +257,7 @@ function AppContent() {
             <RoomPanel />
           </div>
           <div className="sidebar-footnote">
-            <span className="pixel-heart">♥</span>
+            <span className="pixel-heart"><Icon icon="mingcute:heart" /></span>
             <span>made for tiny worlds</span>
           </div>
         </aside>

@@ -6,7 +6,7 @@ export function normalizeHex(input: string): string | null {
   let s = input.trim().toLowerCase();
   if (!s.startsWith("#")) s = "#" + s;
   if (/^#[0-9a-f]{3}$/.test(s)) {
-    return "#" + s[1] + s[2] + s[3] + s[4] + s[5] + s[6];
+    return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`;
   }
   if (/^#[0-9a-f]{6}$/.test(s)) return s;
   return null;
