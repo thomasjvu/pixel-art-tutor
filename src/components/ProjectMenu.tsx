@@ -285,7 +285,7 @@ export function ProjectMenu() {
         <svg width="22" height="22" viewBox="0 0 8 8" shapeRendering="crispEdges" aria-hidden="true">
           <rect width="8" height="8" fill="#000" />
           <rect x="1" y="1" width="2" height="2" fill="#ff2e2e" />
-          <rect x="5" y="1" width="2" height="2" fill="#ffee00" />
+          <rect x="5" y="1" width="2" height="2" fill="#39c5bb" />
           <rect x="3" y="3" width="2" height="2" fill="#fff" />
           <rect x="1" y="5" width="2" height="2" fill="#fff" />
           <rect x="5" y="5" width="2" height="2" fill="#ff2e2e" />

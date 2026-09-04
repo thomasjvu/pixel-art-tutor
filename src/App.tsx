@@ -17,6 +17,7 @@ import { ShareDialog } from "./components/ShareDialog";
 import { RoomBridge } from "./components/RoomBridge";
 import { RoomPanel } from "./components/RoomPanel";
 import { TutorialOverlay } from "./components/TutorialOverlay";
+import { FloatingPet } from "./components/FloatingPet";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { decodeProjectFromHashParam } from "./engine/share";
@@ -283,7 +284,6 @@ function AppContent() {
             >
               <Icon icon="mingcute:forward-2" />
             </button>
-            <span className="dock-grip" aria-hidden="true"><Icon icon="mingcute:more-2" /></span>
           </div>
           <nav className="tabs" role="tablist" aria-label="Studio panels">
             {TABS.map((item) => (
@@ -349,6 +349,7 @@ function AppContent() {
       <PreferencesDialog />
       <NewProjectDialog />
       <ShareDialog />
+      <FloatingPet />
       <TutorialOverlay />
     </div>
   );

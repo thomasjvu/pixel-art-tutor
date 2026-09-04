@@ -71,6 +71,7 @@ export function Toolbar() {
             className={tool === item.id ? "tool-btn active" : "tool-btn"}
             onClick={() => setTool(item.id)}
             title={`${item.label} (${formatShortcut(keymap[item.action])}) — right-click always erases`}
+            data-tooltip={`${item.label} · ${formatShortcut(keymap[item.action])} · right-click erases`}
             aria-label={`${item.label} tool`}
             aria-pressed={tool === item.id}
           >
@@ -83,10 +84,24 @@ export function Toolbar() {
       <div className="toolbar-rule" />
 
       <div className="toolbar-action-row">
-        <button className="tool-btn" onClick={undoProject} disabled={sharedRoom ? !roomCanUndo : !past} title="Undo (Ctrl/Cmd+Z)">
+        <button
+          className="tool-btn"
+          onClick={undoProject}
+          disabled={sharedRoom ? !roomCanUndo : !past}
+          title="Undo (Ctrl/Cmd+Z)"
+          data-tooltip="Undo · Ctrl/Cmd+Z"
+          aria-label="Undo"
+        >
           <Icon icon="mingcute:undo-2" />
         </button>
-        <button className="tool-btn" onClick={redoProject} disabled={sharedRoom ? !roomCanRedo : !future} title="Redo (Ctrl/Cmd+Y)">
+        <button
+          className="tool-btn"
+          onClick={redoProject}
+          disabled={sharedRoom ? !roomCanRedo : !future}
+          title="Redo (Ctrl/Cmd+Y)"
+          data-tooltip="Redo · Ctrl/Cmd+Y"
+          aria-label="Redo"
+        >
           <Icon icon="mingcute:redo-2" />
         </button>
       </div>
@@ -96,10 +111,12 @@ export function Toolbar() {
           className={showGrid ? "tool-toggle active" : "tool-toggle"}
           onClick={() => setShowGrid(!showGrid)}
           title="Toggle pixel grid"
+          data-tooltip={`Grid · ${formatShortcut(keymap.toggleGrid)}`}
+          aria-label="Toggle pixel grid"
           aria-pressed={showGrid}
         >
           <Icon icon="mingcute:grid-2" />
-          <span>Grid</span>
+          <span className="tool-toggle-label">Grid</span>
           <span className="tool-shortcut">{formatShortcut(keymap.toggleGrid)}</span>
         </button>
         <button
@@ -107,50 +124,60 @@ export function Toolbar() {
           disabled={!onionAvailable}
           onClick={toggleOnion}
           title={onionAvailable ? "Toggle onion skin" : "Add another frame to use onion skin"}
+          data-tooltip={onionAvailable ? `Onion skin · ${formatShortcut(keymap.toggleOnion)}` : "Onion skin · add another frame first"}
+          aria-label="Toggle onion skin"
           aria-pressed={onion}
         >
           <Icon icon="mingcute:layers" />
-          <span>Onion</span>
+          <span className="tool-toggle-label">Onion</span>
           <span className="tool-shortcut">{formatShortcut(keymap.toggleOnion)}</span>
         </button>
         <button
           className={pixelPerfect ? "tool-toggle active" : "tool-toggle"}
           onClick={() => setPixelPerfect(!pixelPerfect)}
           title="Use pixel-perfect connected strokes"
+          data-tooltip={`Pixel-perfect stroke · ${formatShortcut(keymap.togglePixelPerfect)}`}
+          aria-label="Toggle pixel-perfect stroke"
           aria-pressed={pixelPerfect}
         >
           <Icon icon="mingcute:magic-2" />
-          <span>Pixel perfect</span>
+          <span className="tool-toggle-label">Pixel perfect</span>
           <span className="tool-shortcut">{formatShortcut(keymap.togglePixelPerfect)}</span>
         </button>
         <button
           className={shadingMode ? "tool-toggle active" : "tool-toggle"}
           onClick={() => setShadingMode(!shadingMode)}
           title="Choose a nearby palette shade while painting"
+          data-tooltip={`Shading ink · ${formatShortcut(keymap.toggleShading)}`}
+          aria-label="Toggle shading ink"
           aria-pressed={shadingMode}
         >
           <Icon icon="mingcute:sun" />
-          <span>Shading ink</span>
+          <span className="tool-toggle-label">Shading ink</span>
           <span className="tool-shortcut">{formatShortcut(keymap.toggleShading)}</span>
         </button>
         <button
           className={tiledMode ? "tool-toggle active" : "tool-toggle"}
           onClick={() => setTiledMode(!tiledMode)}
           title="Preview the canvas as a repeating tile"
+          data-tooltip={`Tiled preview · ${formatShortcut(keymap.toggleTiled)}`}
+          aria-label="Toggle tiled preview"
           aria-pressed={tiledMode}
         >
           <Icon icon="mingcute:grid-2" />
-          <span>Tiled</span>
+          <span className="tool-toggle-label">Tiled</span>
           <span className="tool-shortcut">{formatShortcut(keymap.toggleTiled)}</span>
         </button>
         <button
           className={brushMode !== "solid" ? "tool-toggle active" : "tool-toggle"}
           onClick={() => setBrushMode(brushMode === "solid" ? "checker" : "solid")}
           title="Use a checker dither brush for pixel shading"
+          data-tooltip={`Dither brush · ${formatShortcut(keymap.toggleBrush)}`}
+          aria-label="Toggle dither brush"
           aria-pressed={brushMode !== "solid"}
         >
           <Icon icon="mingcute:magic-2" />
-          <span>{brushMode === "dots" ? "Dot brush" : "Dither brush"}</span>
+          <span className="tool-toggle-label">{brushMode === "dots" ? "Dot brush" : "Dither brush"}</span>
           <span className="tool-shortcut">{formatShortcut(keymap.toggleBrush)}</span>
         </button>
       </div>
@@ -158,6 +185,7 @@ export function Toolbar() {
       <button
         className="toolbar-colors picker"
         title="Pick a custom color (adds it to the palette)"
+        data-tooltip="Choose a custom color"
         aria-label="Pick a custom color"
         onClick={() => colorInputRef.current?.click()}
       >
@@ -183,11 +211,11 @@ export function Toolbar() {
 
       <div className="zoom-control">
         <span className="zoom-label">Zoom</span>
-        <button className="zoom-button" onClick={() => setZoom(zoom - 1)} title="Zoom out" aria-label="Zoom out">
+        <button className="zoom-button" onClick={() => setZoom(zoom - 1)} title="Zoom out" data-tooltip="Zoom out" aria-label="Zoom out">
           −
         </button>
         <span>{zoom}px</span>
-        <button className="zoom-button" onClick={() => setZoom(zoom + 1)} title="Zoom in" aria-label="Zoom in">
+        <button className="zoom-button" onClick={() => setZoom(zoom + 1)} title="Zoom in" data-tooltip="Zoom in" aria-label="Zoom in">
           +
         </button>
       </div>

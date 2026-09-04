@@ -1,5 +1,5 @@
 :root {
-  /* UNDERTALE 1-bit theme: black void, white bone, soul red, mercy yellow */
+  /* UNDERTALE 1-bit theme: black void, white bone, soul red, Miku-teal accent */
   --paper: #0a0a0a;
   --paper-warm: #101010;
   --paper-deep: #161616;
@@ -10,13 +10,13 @@
   --line-strong: #f4f4f4;
   --red: #ff2e2e;
   --red-dark: #a80000;
-  --mint: #e6e600;
-  --mint-dark: #8a8a00;
-  --mint-soft: #232300;
-  --mint-line: #6e6e00;
+  --mint: #39c5bb;
+  --mint-dark: #167c76;
+  --mint-soft: #0d2b2a;
+  --mint-line: #236b66;
   --blue: #f4f4f4;
   --blue-soft: #1b1b1b;
-  --yellow: #ffee00;
+  --accent: #39c5bb;
   --danger: #ff2e2e;
   --danger-soft: #2b0000;
   --red-soft: #2b0d0d;
@@ -182,8 +182,8 @@ kbd {
   background: #f39a91;
 }
 
-.window-dot.yellow {
-  background: var(--yellow);
+.window-dot.accent {
+  background: var(--accent);
 }
 
 .window-dot.mint {
@@ -630,7 +630,7 @@ kbd {
   bottom: -5px;
   padding: 1px 3px;
   color: var(--ink);
-  background: var(--yellow);
+  background: var(--accent);
   border-radius: 3px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 8px;
@@ -1232,13 +1232,6 @@ kbd {
   font-size: 13px;
 }
 
-.dock-grip {
-  color: var(--ink-faint);
-  font-size: 13px;
-  letter-spacing: 2px;
-  transform: rotate(90deg);
-}
-
 .tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1297,7 +1290,7 @@ kbd {
 }
 
 .tab-dot.err {
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .tab-body {
@@ -1559,7 +1552,7 @@ kbd {
   height: 17px;
   place-items: center;
   color: var(--ink);
-  background: var(--yellow);
+  background: var(--accent);
   border: 2px solid var(--paper-warm);
   border-radius: 50%;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1871,7 +1864,7 @@ kbd {
 
 .status-error .dot,
 .status-unsupported .dot {
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .prompt-list {
@@ -1988,7 +1981,7 @@ kbd {
 
 .room-status.status-connecting .room-status-dot,
 .room-status.status-offline .room-status-dot {
-  background: var(--yellow);
+  background: var(--accent);
   animation: blink 1s ease-in-out infinite;
 }
 
@@ -2140,7 +2133,7 @@ kbd {
   height: 34px;
   place-items: center;
   color: var(--ink);
-  background: var(--yellow);
+  background: var(--accent);
   border-radius: 6px;
   font-size: 19px;
 }
@@ -2261,7 +2254,7 @@ kbd {
 }
 
 .critique-card.severity-warn {
-  border-left-color: var(--yellow);
+  border-left-color: var(--accent);
 }
 
 .critique-card.severity-info {
@@ -2393,7 +2386,7 @@ kbd {
 }
 
 /* ================= UNDERTALE 1-BIT THEME LAYER =================
-   Black void, white bone, soul red, mercy yellow. Pixel-first:
+   Black void, white bone, soul red, Miku-teal accent. Pixel-first:
    square corners, chunky borders, hard shadows, dither + scanlines. */
 
 .app *,
@@ -2404,7 +2397,7 @@ kbd {
 
 ::selection {
   color: #000;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 /* CRT scanlines + vignette over everything */
@@ -2441,7 +2434,7 @@ body {
 .app {
   background: #000;
   border: 3px solid var(--line-strong);
-  box-shadow: 0 0 0 3px #000, 0 0 42px rgba(255, 238, 0, 0.07);
+  box-shadow: 0 0 0 3px #000, 0 0 42px rgba(57, 197, 187, 0.07);
 }
 
 .app-header {
@@ -2457,7 +2450,7 @@ body {
 }
 
 .brand-copy span {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .brand-mark {
@@ -2479,7 +2472,7 @@ body {
 
 .project-title:focus {
   background: #111;
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .project-subtitle {
@@ -2505,8 +2498,8 @@ body {
 .status-light.ready,
 .status-connection.ok .status-light,
 .room-light.ready {
-  background: var(--yellow);
-  box-shadow: 0 0 6px var(--yellow);
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
   animation: soul-blink 1.1s steps(2) infinite;
 }
 
@@ -2522,8 +2515,8 @@ body {
 
 .header-icon-btn:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ---------- menus ---------- */
@@ -2542,7 +2535,7 @@ body {
 
 .menu-item:hover {
   color: #000;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .menu-item:hover kbd {
@@ -2560,14 +2553,14 @@ body {
 }
 
 kbd {
-  color: var(--yellow);
+  color: var(--accent);
   background: #000;
   border: 1px solid var(--line-strong);
   font-family: var(--font-crt);
 }
 
 code {
-  color: var(--yellow);
+  color: var(--accent);
   background: #161616;
   border: 1px solid var(--line);
 }
@@ -2588,8 +2581,8 @@ code {
 }
 
 .primary-btn {
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #000;
   font-family: var(--font-pixel);
   font-size: 9px;
@@ -2650,14 +2643,14 @@ input:focus,
 select:focus,
 button:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--yellow);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
 input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--yellow);
+  accent-color: var(--accent);
 }
 
 /* ---------- workspace / toolbar ---------- */
@@ -2683,7 +2676,7 @@ input[type="checkbox"] {
 }
 
 .toolbar-label {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 9px;
 }
@@ -2705,8 +2698,8 @@ input[type="checkbox"] {
 
 .rail-hide:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .rail-tab {
@@ -2727,7 +2720,7 @@ input[type="checkbox"] {
 
 .rail-tab:hover {
   color: #000;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .toolbar-rule {
@@ -2743,7 +2736,7 @@ input[type="checkbox"] {
 }
 
 .color-index {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 8px;
 }
@@ -2850,7 +2843,7 @@ input[type="checkbox"] {
 }
 
 .sidebar-heading strong {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 9px;
 }
@@ -2872,8 +2865,8 @@ input[type="checkbox"] {
 }
 
 .tab-dot.ok {
-  background: var(--yellow);
-  box-shadow: 0 0 6px var(--yellow);
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
 }
 
 .tab-body {
@@ -2886,7 +2879,7 @@ input[type="checkbox"] {
 }
 
 .panel h4 {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 8px;
   letter-spacing: 0.05em;
@@ -2902,8 +2895,8 @@ input[type="checkbox"] {
 }
 
 .sprite-row.active {
-  border-color: var(--yellow);
-  box-shadow: 3px 3px 0 rgba(255, 238, 0, 0.25);
+  border-color: var(--accent);
+  box-shadow: 3px 3px 0 rgba(57, 197, 187, 0.25);
 }
 
 .sprite-label {
@@ -2920,7 +2913,6 @@ input[type="checkbox"] {
   background: #000;
 }
 
-.dock-grip,
 .sidebar-footnote {
   color: var(--ink-faint);
 }
@@ -2942,19 +2934,19 @@ input[type="checkbox"] {
 }
 
 .mcp-chip.status-ready .dot {
-  background: var(--yellow);
-  box-shadow: 0 0 6px var(--yellow);
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
   animation: soul-blink 1.1s steps(2) infinite;
 }
 
 .agent-live-card {
   background: #0d0d0d;
-  border: 2px solid var(--yellow);
-  box-shadow: 3px 3px 0 rgba(255, 238, 0, 0.2);
+  border: 2px solid var(--accent);
+  box-shadow: 3px 3px 0 rgba(57, 197, 187, 0.2);
 }
 
 .agent-live-copy strong {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .agent-progress {
@@ -2963,7 +2955,7 @@ input[type="checkbox"] {
 }
 
 .agent-progress i {
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .callout {
@@ -3021,11 +3013,11 @@ input[type="checkbox"] {
 }
 
 .room-status.status-connected {
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .room-status.status-connected .room-status-dot {
-  background: var(--yellow);
+  background: var(--accent);
   animation: soul-blink 1.1s steps(2) infinite;
 }
 
@@ -3037,7 +3029,7 @@ input[type="checkbox"] {
 }
 
 .room-card code {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .person-row {
@@ -3077,8 +3069,8 @@ input[type="checkbox"] {
 
 .kind-badge.kind-agent {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .kind-badge.kind-human {
@@ -3105,7 +3097,7 @@ input[type="checkbox"] {
 /* ---------- critique ---------- */
 
 .critique-score {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
 }
 
@@ -3154,7 +3146,7 @@ input[type="checkbox"] {
 }
 
 .tutorial-kicker {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 8px;
 }
@@ -3180,7 +3172,7 @@ input[type="checkbox"] {
 
 .tutorial-body::before {
   content: "* ";
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .tutorial-progress {
@@ -3197,8 +3189,8 @@ input[type="checkbox"] {
 }
 
 .tutorial-progress i.on {
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .tutorial-actions {
@@ -3235,12 +3227,12 @@ input[type="checkbox"] {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 /* ---------- dither helpers ---------- */
 
-/* readability: VT323 + Press Start 2P run small — lift the floor */
+/* Readability pass: keep a pixel silhouette without relying on tiny arcade text. */
 .hint,
 .field {
   font-size: 14px;
@@ -3305,7 +3297,7 @@ input[type="checkbox"] {
   }
 }
 /* ================= UNDERTALE FULLSCREEN EDITOR =================
-   Flat black workspace, white bone UI, soul red, mercy yellow. The editor
+   Flat black workspace, white bone UI, soul red, Miku-teal accent. The editor
    owns the viewport instead of sitting inside a decorative application card. */
 
 html,
@@ -3362,7 +3354,7 @@ body {
 }
 
 .brand-copy span {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .project-title {
@@ -3373,7 +3365,7 @@ body {
 
 .project-title:focus {
   background: #111;
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .header-icon-btn,
@@ -3391,8 +3383,8 @@ body {
 
 .header-icon-btn:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .header-status,
@@ -3405,7 +3397,7 @@ body {
 .room-light.ready,
 .tab-dot.ok,
 .menu-dot {
-  background: var(--yellow);
+  background: var(--accent);
   box-shadow: none !important;
   animation: none;
 }
@@ -3419,7 +3411,7 @@ body {
 .menu-popover > summary:hover,
 .menu-popover[open] > summary {
   color: #000;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .menu-panel {
@@ -3430,7 +3422,7 @@ body {
 
 .menu-item:hover:not(:disabled) {
   color: #000;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .menu-item:hover:not(:disabled) .pixel-icon {
@@ -3500,7 +3492,7 @@ body {
 }
 
 .project-tab.active .project-tab-button .pixel-icon {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .project-tab-close,
@@ -3520,7 +3512,7 @@ body {
 .project-tab-close:hover,
 .project-tab-new:hover {
   color: #000;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .project-tab-new {
@@ -3605,9 +3597,9 @@ body {
 .tool-toggle.active,
 .timeline-tool.active,
 .hud-btn.active {
-  color: var(--yellow);
+  color: var(--accent);
   background: #000;
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .round-btn.play,
@@ -3621,7 +3613,7 @@ body {
 .color-index,
 .zoom-control,
 .zoom-label {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .color-back,
@@ -3715,8 +3707,8 @@ body {
 
 .zoom-step:hover:not(:disabled) {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .stage-actions {
@@ -3768,9 +3760,9 @@ body {
 }
 
 .layer-icon {
-  color: var(--yellow);
+  color: var(--accent);
   background: #000;
-  border: 1px solid var(--yellow);
+  border: 1px solid var(--accent);
   border-radius: 0 !important;
 }
 
@@ -3790,7 +3782,7 @@ body {
   width: 22px;
   height: 22px;
   place-items: center;
-  color: var(--yellow);
+  color: var(--accent);
   background: #000;
   border: 1px solid var(--line);
 }
@@ -3802,14 +3794,14 @@ body {
 .layer-visibility:hover,
 .layer-visibility[aria-pressed="false"]:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .layer-lock:hover,
 .layer-lock.locked {
-  color: var(--yellow);
-  border-color: var(--yellow);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .timeline-footer {
@@ -3835,7 +3827,7 @@ body {
 }
 
 .sidebar-heading strong {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .tabs {
@@ -3860,7 +3852,7 @@ body {
 }
 
 .panel h4 {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .sprite-row,
@@ -3877,13 +3869,13 @@ body {
 
 .sprite-row.active,
 .agent-live-card {
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .primary-btn {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .text-btn:hover:not(:disabled),
@@ -4000,7 +3992,7 @@ body {
 
 /* ================= QUIET CHROME / ASEPRITE-LIKE TIMELINE =================
    The art keeps the hard pixel edges; the editor chrome uses low-contrast
-   hairlines so the canvas and soul-red/yellow accents get the attention. */
+   hairlines so the canvas and soul-red/Miku-teal accents get the attention. */
 
 :root {
   --line: #292929;
@@ -4085,13 +4077,13 @@ body {
   color: #fff;
   background: #171717;
   border-color: #555;
-  box-shadow: inset 2px 0 var(--yellow) !important;
+  box-shadow: inset 2px 0 var(--accent) !important;
 }
 
 .tool-toggle.active,
 .timeline-tool.active,
 .hud-btn.active {
-  color: var(--yellow);
+  color: var(--accent);
   background: #0e0e0e;
   border-color: #59521f;
   box-shadow: none !important;
@@ -4119,8 +4111,8 @@ body {
 
 .primary-btn:hover:not(:disabled) {
   color: #000;
-  background: #ffe66b;
-  border-color: #ffe66b;
+  background: #8ee5df;
+  border-color: #8ee5df;
 }
 
 .color-back,
@@ -4153,7 +4145,7 @@ body {
 }
 
 .timeline-select:focus {
-  outline: 1px solid var(--yellow);
+  outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
 
@@ -4186,12 +4178,12 @@ body {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  border-left: 2px solid var(--tag-color, var(--yellow));
+  border-left: 2px solid var(--tag-color, var(--accent));
   background: #111;
 }
 
 .frame-tag.active {
-  background: #241f09;
+  background: #0d3633;
 }
 
 .frame-tag button {
@@ -4220,7 +4212,7 @@ body {
 .timeline-add-layer {
   min-height: 22px;
   padding: 3px 7px;
-  color: var(--yellow);
+  color: var(--accent);
   background: transparent;
   border: 1px dashed #4b4317;
   border-radius: 0;
@@ -4231,8 +4223,8 @@ body {
 .timeline-tag-add:hover,
 .timeline-add-layer:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .timeline-scroll {
@@ -4305,7 +4297,7 @@ body {
 }
 
 .layer-row-actions button:hover:not(:disabled) {
-  color: var(--yellow);
+  color: var(--accent);
   border-color: #4f4619;
 }
 
@@ -4360,14 +4352,14 @@ body {
 
 .palette-alpha-row output {
   min-width: 30px;
-  color: var(--yellow);
+  color: var(--accent);
   text-align: right;
 }
 
 .alpha-range {
   min-width: 0;
   flex: 1;
-  accent-color: var(--yellow);
+  accent-color: var(--accent);
 }
 
 .color-wheel {
@@ -4392,7 +4384,7 @@ body {
 }
 
 .color-wheel:hover {
-  border-color: var(--yellow);
+  border-color: var(--accent);
   transform: scale(0.97);
 }
 
@@ -4419,7 +4411,7 @@ body {
 
 .palette-toolbar-label {
   margin-right: auto;
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .palette-columns-control {
@@ -4471,7 +4463,7 @@ body {
 }
 
 .timeline-layer-controls-label {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 .timeline-layer-controls strong {
@@ -4494,7 +4486,7 @@ body {
 .layer-opacity-control input {
   width: 75px;
   padding: 0;
-  accent-color: var(--yellow);
+  accent-color: var(--accent);
 }
 
 .layer-opacity-control output {
@@ -4534,7 +4526,7 @@ body {
 
 .timeline-cel-link:hover,
 .timeline-cel-link.linked {
-  color: var(--yellow);
+  color: var(--accent);
   border-color: #6a6125;
 }
 
@@ -4583,7 +4575,7 @@ body {
 .tool-toggle.active,
 .timeline-tool.active,
 .hud-btn.active {
-  border-color: #554e25;
+  border-color: #285550;
 }
 
 .timeline-cel.active {
@@ -4734,7 +4726,7 @@ body {
 }
 
 .room-refresh:hover:not(:disabled) {
-  color: var(--yellow);
+  color: var(--accent);
   background: #151515;
   border-color: #514a25;
 }
@@ -4776,13 +4768,13 @@ body {
 .active-room-row.current {
   color: #fff;
   background: #121212;
-  border-color: #3b3720;
+  border-color: #1f4542;
 }
 
 .active-room-dot {
   width: 6px;
   height: 6px;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .active-room-copy {
@@ -4819,7 +4811,7 @@ body {
 }
 
 .active-room-meta small {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 7px;
   letter-spacing: 0.06em;
@@ -4875,7 +4867,7 @@ body {
 .footer-project-title:focus {
   padding: 3px 5px;
   background: #111;
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .footer-project-subtitle {
@@ -4942,8 +4934,8 @@ body {
 
 .footer-help:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .statusbar .status-recovery {
@@ -5025,7 +5017,7 @@ body {
 }
 
 .tool-toggle.active .tool-shortcut {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 @media (max-width: 1120px) {
@@ -5105,7 +5097,7 @@ body {
 }
 
 .dialog-kicker {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 8px;
   letter-spacing: 0.04em;
@@ -5129,8 +5121,8 @@ body {
 
 .dialog-close:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .dialog-intro {
@@ -5199,8 +5191,8 @@ body {
 }
 
 .keymap-input.recording {
-  color: var(--yellow);
-  border-color: var(--yellow);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .keymap-reset,
@@ -5218,8 +5210,8 @@ body {
 .keymap-reset:hover,
 .keymap-clear:hover {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .dialog-footer {
@@ -5295,8 +5287,8 @@ body {
   margin: 3px 0 10px;
   padding: 9px 10px;
   color: #000;
-  background: var(--yellow);
-  border: 1px solid var(--yellow);
+  background: var(--accent);
+  border: 1px solid var(--accent);
   text-align: left;
 }
 
@@ -5384,7 +5376,7 @@ body {
 }
 
 .share-network-email .share-network-mark {
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .share-unavailable {
@@ -5504,9 +5496,9 @@ body {
   flex: 0 0 auto;
   place-items: center;
   overflow: hidden;
-  color: var(--pet-accent, var(--yellow));
+  color: var(--pet-accent, var(--accent));
   background: #090909;
-  border: 1px solid var(--pet-accent, var(--yellow));
+  border: 1px solid var(--pet-accent, var(--accent));
   image-rendering: pixelated;
 }
 
@@ -5551,7 +5543,7 @@ body {
 .pet-option.active {
   color: #fff;
   background: #151515;
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .pet-option .pet-avatar {
@@ -5586,7 +5578,7 @@ body {
 }
 
 .tutorial-speaker strong {
-  color: var(--yellow);
+  color: var(--accent);
   font-family: var(--font-pixel);
   font-size: 9px;
 }
@@ -5673,7 +5665,7 @@ body {
 }
 
 /* ================= LIGHT MODE =================
-   A paper-and-ink alternative for long drawing sessions. The same red/yellow
+   A paper-and-ink alternative for long drawing sessions. The same red/Miku-teal
    accents remain, while the working surface and chrome invert calmly. */
 
 .app.theme-light {
@@ -5776,9 +5768,9 @@ body {
 .app.theme-light .tool-btn.active,
 .app.theme-light .tool-toggle.active,
 .app.theme-light .tab.active {
-  color: #241f09;
-  background: var(--yellow);
-  border-color: #c8b900;
+  color: #0d3633;
+  background: var(--accent);
+  border-color: #238b84;
 }
 
 .app.theme-light .menu-popover[open] > summary,
@@ -5828,7 +5820,7 @@ body {
 .app.theme-light .pet-option:hover,
 .app.theme-light .pet-option.active {
   background: #ebe5c5;
-  border-color: #c8b900;
+  border-color: #238b84;
 }
 
 .app.theme-light .timeline-cel.active {
@@ -6088,8 +6080,8 @@ body {
 .size-preset:hover,
 .size-preset.active {
   color: #000;
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .new-project-memory-note {
@@ -6103,7 +6095,7 @@ body {
 }
 
 .new-project-memory-note .pixel-icon {
-  color: var(--yellow);
+  color: var(--accent);
 }
 
 @media (max-width: 520px) {
@@ -6198,7 +6190,7 @@ body {
 .app.theme-light .timeline-tool.active {
   color: #4b4300;
   background: #ebe5c5;
-  border-color: #c8b900;
+  border-color: #238b84;
   box-shadow: none !important;
 }
 
@@ -6260,7 +6252,7 @@ body {
 .app.theme-light .palette-toolbar-label,
 .app.theme-light .panel h4,
 .app.theme-light .sidebar-heading strong {
-  color: #776b00;
+  color: #176962;
 }
 
 .app.theme-light .menu-app-mark,
@@ -6331,7 +6323,7 @@ body {
 
 .timeline-resize-handle:hover::after,
 .timeline-resize-handle:focus-visible::after {
-  background: var(--yellow);
+  background: var(--accent);
   opacity: 1;
 }
 
@@ -6406,4 +6398,475 @@ body {
   color: var(--ink-soft);
   background: #fffdf8;
   border-color: var(--line);
+}
+
+/* ================= COMPANION LAYER =================
+   The pet is a small floating object, separate from the editor chrome. Its
+   position is owned by the browser so a tutorial, room, or document switch
+   never makes it jump back to the corner. */
+
+.floating-pet {
+  position: fixed;
+  z-index: 8990;
+  top: 0;
+  left: 0;
+  width: max-content;
+  pointer-events: none;
+  user-select: none;
+}
+
+.floating-pet-dragger {
+  display: grid;
+  width: 142px;
+  gap: 2px;
+  place-items: center;
+  padding: 6px 8px 7px;
+  color: #fff;
+  background: rgba(5, 5, 5, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px !important;
+  box-shadow: 0 7px 0 rgba(255, 255, 255, 0.08), 0 14px 28px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.floating-pet-dragger:hover,
+.floating-pet-dragger:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+}
+
+.floating-pet.dragging .floating-pet-dragger,
+.floating-pet-dragger:active {
+  cursor: grabbing;
+}
+
+.floating-pet-avatar.pet-avatar {
+  width: 96px;
+  height: 96px;
+  border-color: transparent;
+  background: transparent;
+  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.45));
+}
+
+.floating-pet-name {
+  max-width: 116px;
+  overflow: hidden;
+  color: var(--accent);
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.floating-pet-grip {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  color: var(--ink-faint);
+  font-family: var(--font-crt);
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* The first atlas row is Codex's small idle loop: blink, settle, and blink
+   again. A stepped transform preserves the sprite sheet's native pixels. */
+@keyframes pet-sheet-idle {
+  0%, 9.99% { transform: translate(0, 0); }
+  10%, 19.99% { transform: translate(-12.5%, 0); }
+  20%, 29.99% { transform: translate(-25%, 0); }
+  30%, 39.99% { transform: translate(-37.5%, 0); }
+  40%, 49.99% { transform: translate(-50%, 0); }
+  50%, 59.99% { transform: translate(-62.5%, 0); }
+  60%, 69.99% { transform: translate(-50%, 0); }
+  70%, 79.99% { transform: translate(-37.5%, 0); }
+  80%, 89.99% { transform: translate(-25%, 0); }
+  90%, 100% { transform: translate(-12.5%, 0); }
+}
+
+.pet-avatar-sheet img {
+  transform-origin: top left;
+  animation: pet-sheet-idle 2.4s steps(1, end) infinite;
+  will-change: transform;
+}
+
+/* The companion stays present as a quiet, readable affordance between agent
+   actions. When work starts, the normal color and stepped idle loop return. */
+.floating-pet-avatar.pet-avatar {
+  transition: filter 180ms linear;
+}
+
+.floating-pet.inactive .floating-pet-dragger {
+  opacity: 0.72;
+}
+
+.floating-pet.inactive .floating-pet-avatar.pet-avatar {
+  filter: grayscale(1) saturate(0.12) brightness(0.72) drop-shadow(0 3px 0 rgba(0, 0, 0, 0.42));
+}
+
+.floating-pet.inactive .floating-pet-name {
+  color: var(--ink-faint);
+}
+
+.floating-pet.inactive .pet-avatar-sheet img {
+  animation: none;
+  transform: translate(0, 0);
+}
+
+/* ================= CLEAN TUTORIAL ================= */
+
+.tutorial-veil {
+  align-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.tutorial-box {
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr);
+  width: min(820px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 32px));
+  padding: 14px;
+  color: #fff;
+  background: #000;
+  border: 2px solid #fff;
+  outline: 1px solid #000;
+  box-shadow: 0 0 0 1px #fff, 10px 10px 0 rgba(244, 244, 244, 0.12);
+}
+
+.tutorial-pet-rail {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 14px 4px 4px;
+  border-right: 1px solid #222;
+  text-align: center;
+}
+
+.tutorial-pet-frame {
+  display: grid;
+  width: 132px;
+  height: 132px;
+  place-items: center;
+  background: #070d18;
+  border: 1px solid var(--pet-accent, #668fd4);
+  border-radius: 6px;
+}
+
+.tutorial-pet-frame .pet-avatar {
+  width: 124px;
+  height: 124px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.tutorial-pet-rail > div:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tutorial-pet-rail strong {
+  overflow: hidden;
+  color: var(--accent);
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tutorial-pet-rail span {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.tutorial-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 3px 4px 3px 18px;
+}
+
+.tutorial-head {
+  position: relative;
+  margin-bottom: 13px;
+  padding-right: 29px;
+}
+
+.tutorial-count {
+  margin-left: 8px;
+}
+
+.tutorial-close {
+  position: absolute;
+  top: -5px;
+  right: 0;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  padding: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px !important;
+  font-family: var(--font-crt);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.tutorial-close:hover,
+.tutorial-close:focus-visible {
+  color: #fff;
+  background: #171717;
+  border-color: var(--line);
+  outline: 0;
+}
+
+.tutorial-title {
+  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.tutorial-body {
+  max-width: 620px;
+  margin-bottom: 18px;
+  font-size: 19px;
+  line-height: 1.35;
+}
+
+.tutorial-progress {
+  gap: 5px;
+  margin-top: auto;
+  margin-bottom: 18px;
+}
+
+.tutorial-progress i {
+  width: 11px;
+  height: 5px;
+  border: 0;
+  border-radius: 2px;
+}
+
+.tutorial-actions {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.tutorial-actions .text-btn:first-child {
+  margin-right: auto;
+}
+
+.tutorial-actions .primary-btn,
+.tutorial-actions .text-btn {
+  min-height: 29px;
+}
+
+.app.theme-light .floating-pet-dragger {
+  color: var(--ink);
+  background: rgba(255, 253, 248, 0.95);
+  border-color: var(--line-strong);
+  box-shadow: 0 7px 0 rgba(32, 37, 43, 0.08), 0 14px 28px var(--shadow);
+}
+
+.app.theme-light .floating-pet-dragger:hover,
+.app.theme-light .floating-pet-dragger:focus-visible {
+  border-color: #238b84;
+}
+
+.app.theme-light .tutorial-pet-rail {
+  border-color: var(--line);
+}
+
+.app.theme-light .tutorial-pet-frame {
+  background: #f5f2eb;
+  border-color: var(--line-strong);
+}
+
+.app.theme-light .tutorial-close:hover,
+.app.theme-light .tutorial-close:focus-visible {
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+
+@media (max-width: 640px) {
+  .tutorial-box {
+    grid-template-columns: 1fr;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+  }
+
+  .tutorial-pet-rail {
+    grid-template-columns: 92px minmax(0, 1fr);
+    justify-items: start;
+    align-items: center;
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid #222;
+    text-align: left;
+  }
+
+  .tutorial-pet-frame {
+    width: 88px;
+    height: 88px;
+  }
+
+  .tutorial-pet-frame .pet-avatar {
+    width: 82px;
+    height: 82px;
+  }
+
+  .tutorial-main {
+    padding: 14px 0 0;
+  }
+
+  .tutorial-body {
+    font-size: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-avatar-sheet img {
+    animation: none;
+  }
+}
+
+/* ================= ACCESSIBLE TOOL RAIL =================
+   Pixelify Sans keeps the handmade grid character while giving lowercase text
+   more open shapes and a less condensed rhythm for longer sessions. */
+
+:root {
+  --font-readable: "Pixelify Sans", "Trebuchet MS", system-ui, sans-serif;
+  --font-crt: var(--font-readable);
+  --font-pixel: var(--font-readable);
+}
+
+/* Active tools communicate with color only. The semantic pressed state and
+   the focus ring remain available to keyboard and assistive-technology users. */
+.toolbar .tool-btn.active,
+.toolbar .tool-toggle.active {
+  color: var(--accent) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.toolbar .tool-btn.active .tool-key,
+.toolbar .tool-toggle.active .tool-shortcut {
+  color: currentColor;
+}
+
+.app.theme-light .toolbar .tool-btn.active,
+.app.theme-light .toolbar .tool-toggle.active {
+  color: #145b56 !important;
+}
+
+/* Keep the full names in aria-label/title and reveal them on demand instead
+   of forcing tiny words into the narrow rail. */
+.toolbar .tool-toggle-label {
+  display: none;
+}
+
+.toolbar .tool-toggle {
+  position: relative;
+  min-height: 32px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding-inline: 5px;
+}
+
+.toolbar [data-tooltip] {
+  position: relative;
+}
+
+.toolbar [data-tooltip]::after {
+  position: absolute;
+  z-index: 40;
+  top: 50%;
+  left: calc(100% + 10px);
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  content: attr(data-tooltip);
+  color: #fff;
+  background: #151515;
+  border: 1px solid #4a4a4a;
+  border-radius: 5px;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-readable);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transform: translate(-5px, -50%);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms var(--ease-out),
+    visibility 0s linear 150ms;
+}
+
+.toolbar [data-tooltip]:hover::after,
+.toolbar [data-tooltip]:focus-visible::after {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(0, -50%);
+  transition-delay: 80ms, 80ms, 0s;
+}
+
+.toolbar .tool-key,
+.toolbar .tool-shortcut,
+.toolbar .zoom-control {
+  font-family: var(--font-readable);
+}
+
+/* The toggle row has room for a clearer key hint; keep the compact two-column
+   tool keys untouched so the primary tool grid stays balanced. */
+.toolbar .tool-toggle .tool-shortcut {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.app.theme-light .toolbar [data-tooltip]::after {
+  color: var(--ink);
+  background: #fffdf8;
+  border-color: var(--line-strong);
+  box-shadow: 0 5px 14px var(--shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar [data-tooltip]::after {
+    transition: none;
+  }
+}
+
+/* Primary rail headings should be legible at a glance, not compete with the
+   canvas. Their larger type is the hierarchy cue; no extra border treatment is
+   needed. */
+.toolbar-label {
+  font-size: 12px !important;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+}
+
+.sidebar-heading strong {
+  font-size: 16px !important;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.sidebar-heading > .rail-hide {
+  margin-left: auto;
 }
