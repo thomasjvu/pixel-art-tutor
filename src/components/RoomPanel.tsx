@@ -32,6 +32,7 @@ export function RoomPanel() {
   const roomPeers = useUi((state) => state.roomPeers);
   const peers = Object.values(roomPeers);
   const roomHost = useUi((state) => state.roomHost);
+  const roomAgentLimit = useUi((state) => state.roomAgentLimit);
   const activeRooms = useUi((state) => state.activeRooms);
   const roomDirectoryStatus = useUi((state) => state.roomDirectoryStatus);
   const roomDirectoryError = useUi((state) => state.roomDirectoryError);
@@ -48,6 +49,12 @@ export function RoomPanel() {
   const nameInput = nameDraft ?? (displayName || roomClient.displayName);
   const companionName = selectedPet?.name ?? "Studio Guide";
   const companionPet = selectedPet ?? DEFAULT_CODEX_PET;
+  const remoteAgentCount = peers.filter((peer) => peer.kind === "agent").length;
+  const agentLimitReached =
+    roomStatus === "connected" &&
+    !actAsAgent &&
+    roomAgentLimit !== null &&
+    remoteAgentCount >= roomAgentLimit;
 
   useEffect(() => {
     void roomClient.refreshRooms();
@@ -184,10 +191,21 @@ export function RoomPanel() {
           <input
             type="checkbox"
             checked={actAsAgent}
+            disabled={agentLimitReached}
             onChange={(event) => setActAsAgent(event.target.checked)}
           />
-          <span>I'm an agent ({companionName})</span>
+          <span>
+            I'm an agent ({companionName})
+            {roomAgentLimit !== null && (
+              <small className="agent-slot-count">
+                {remoteAgentCount + (actAsAgent ? 1 : 0)} / {roomAgentLimit} agent slots
+              </small>
+            )}
+          </span>
         </label>
+        {agentLimitReached && (
+          <p className="hint agent-cap-hint">This room already has its agent. It will be available when they leave.</p>
+        )}
         <div className="panel-row room-actions">
           <button className="primary-btn" onClick={join}>
             {roomStatus === "connected" ? "Switch room" : "Join room"}

@@ -44,7 +44,8 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 function AppContent() {
-  const [tab, setTab] = useState<Tab>("sprites");
+  const [tab, setTab] = useState<Tab>("room");
+  const [panelPickerOpen, setPanelPickerOpen] = useState(false);
   const mcpStatus = useUi((s) => s.mcpStatus);
   const theme = useUi((s) => s.theme);
   const projectName = useStore((s) => s.project.name);
@@ -53,6 +54,8 @@ function AppContent() {
   const timelineOpen = useEditor((s) => s.timelineOpen);
   const timelineHeight = useEditor((s) => s.timelineHeight);
   const hydratedShareParam = useRef<string | null>(null);
+  const panelPickerRef = useRef<HTMLDivElement>(null);
+  const activePanel = TABS.find((item) => item.id === tab) ?? TABS[0];
 
   useEffect(() => {
     const m = location.hash.match(/^#p=(.+)$/);
@@ -90,6 +93,22 @@ function AppContent() {
   useEffect(() => {
     document.title = `${projectName} · Pixel Art Tutor`;
   }, [projectName]);
+
+  useEffect(() => {
+    if (!panelPickerOpen) return;
+    function closeOnOutside(event: PointerEvent) {
+      if (!panelPickerRef.current?.contains(event.target as Node)) setPanelPickerOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setPanelPickerOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [panelPickerOpen]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -285,28 +304,59 @@ function AppContent() {
               <Icon icon="mingcute:forward-2" />
             </button>
           </div>
-          <nav className="tabs" role="tablist" aria-label="Studio panels">
-            {TABS.map((item) => (
+          <div className="inspector-panel-picker" ref={panelPickerRef}>
+            <div className="inspector-panel-picker-control">
               <button
-                key={item.id}
-                role="tab"
-                aria-selected={tab === item.id}
-                className={tab === item.id ? "tab active" : "tab"}
-                onClick={() => setTab(item.id)}
+                type="button"
+                className="inspector-panel-picker-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={panelPickerOpen}
+                aria-controls="inspector-panel-menu"
+                aria-label={`Inspector panel: ${activePanel.label}`}
+                onClick={() => setPanelPickerOpen(!panelPickerOpen)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setPanelPickerOpen(true);
+                  }
+                }}
               >
-                <Icon icon={item.icon} />
-                <span>{item.label}</span>
-                {item.id === "agent" && (
+                <Icon icon={activePanel.icon} />
+                <span className="inspector-panel-picker-value">{activePanel.label}</span>
+                {tab === "agent" && (
                   <span
                     className={
-                      "tab-dot " +
+                      "panel-status-dot " +
                       (mcpStatus === "ready" ? "ok" : mcpStatus === "registering" ? "" : "err")
                     }
+                    aria-label={mcpStatus === "ready" ? "WebMCP ready" : "WebMCP unavailable"}
                   />
                 )}
+                <span className="inspector-panel-picker-chevron" aria-hidden="true">{panelPickerOpen ? "⌃" : "⌄"}</span>
               </button>
-            ))}
-          </nav>
+              {panelPickerOpen && (
+                <div className="inspector-panel-picker-menu" id="inspector-panel-menu" role="listbox" aria-label="Inspector panels">
+                  {TABS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={item.id === tab ? "inspector-panel-picker-option active" : "inspector-panel-picker-option"}
+                      role="option"
+                      aria-selected={item.id === tab}
+                      onClick={() => {
+                        setTab(item.id);
+                        setPanelPickerOpen(false);
+                      }}
+                    >
+                      <Icon icon={item.icon} />
+                      <span>{item.label}</span>
+                      {item.id === tab && <span className="inspector-panel-picker-check" aria-hidden="true">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
           <div className={tab === "palette" ? "tab-body" : "tab-body hidden"}>
             <PalettePanel />
           </div>
@@ -330,7 +380,7 @@ function AppContent() {
           </div>
           <div className="sidebar-footnote">
             <span className="pixel-heart"><Icon icon="mingcute:heart" /></span>
-            <span>made for tiny worlds</span>
+            <a href="https://x.com/ultima_gg" target="_blank" rel="noreferrer">Made by Ultima</a>
           </div>
         </aside>
         ) : (

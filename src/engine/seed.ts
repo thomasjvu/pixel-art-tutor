@@ -1,6 +1,11 @@
 import type { Project, Sprite, SpriteKind } from "../types";
 import { rowsToPixels } from "../engine/pixels";
-import { DEFAULT_CHARACTER_FRAME_COUNT, MAX_DIMENSION, MAX_FRAMES_PER_SPRITE } from "../projectLimits";
+import {
+  DEFAULT_CANVAS_SIZE,
+  DEFAULT_CHARACTER_FRAME_COUNT,
+  MAX_DIMENSION,
+  MAX_FRAMES_PER_SPRITE,
+} from "../projectLimits";
 
 export const DEFAULT_PALETTE = [
   "#1a1c2c", // 0 ink
@@ -352,7 +357,7 @@ export function createStarterProject(): Project {
   };
 }
 
-export const BLANK_CANVAS_SIZE = MAX_DIMENSION;
+export const BLANK_CANVAS_SIZE = DEFAULT_CANVAS_SIZE;
 
 export interface BlankProjectOptions {
   width?: number;

@@ -13,7 +13,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "canvas",
     title: "THE CANVAS",
-    body: "This is your sprite. Use + / − to zoom; the grid and right-click erase are always nearby. New projects start at 256×256.",
+    body: "This is your sprite. Use + / − to zoom; the grid and right-click erase are always nearby. New projects start at 64×64 and 7px per cell.",
   },
   {
     id: "tools",

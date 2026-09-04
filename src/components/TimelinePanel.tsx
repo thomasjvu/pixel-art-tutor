@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Icon } from "./Icon";
+import { SegmentedRange } from "./SegmentedRange";
 import { useEditor } from "../store/editorStore";
 import { useStore } from "../store/projectStore";
 import { spriteLayers, type BlendMode, type Layer } from "../types";
@@ -26,6 +27,8 @@ export function TimelinePanel() {
   const setLayerVisibility = useStore((s) => s.setLayerVisibility);
   const setLayerLocked = useStore((s) => s.setLayerLocked);
   const setLayerOpacity = useStore((s) => s.setLayerOpacity);
+  const beginStroke = useStore((s) => s.beginStroke);
+  const endStroke = useStore((s) => s.endStroke);
   const setLayerBlendMode = useStore((s) => s.setLayerBlendMode);
   const addFrameTag = useStore((s) => s.addFrameTag);
   const deleteFrameTag = useStore((s) => s.deleteFrameTag);
@@ -55,7 +58,6 @@ export function TimelinePanel() {
   const frameCount = activeLayer?.frames.length ?? 0;
   const frameColumns = Math.max(frameCount, ...layers.map((layer) => layer.frames.length));
   const tags = sprite?.frameTags ?? [];
-
   useEffect(() => {
     if (activeLayer && activeLayer.id !== activeLayerId) setActiveLayerId(activeLayer.id);
   }, [activeLayer, activeLayerId, setActiveLayerId]);
@@ -169,7 +171,7 @@ export function TimelinePanel() {
         <div className="timeline-header-actions">
           <div className="timeline-controls">
           <button className="round-btn" onClick={previousFrame} title="Previous frame">
-            <Icon icon="mingcute:back-2" />
+            <Icon icon="mingcute:frame-prev" />
           </button>
           <button
             className={playing ? "round-btn play active" : "round-btn play"}
@@ -180,7 +182,7 @@ export function TimelinePanel() {
             <Icon icon={playing ? "mingcute:pause-fill" : "mingcute:play-fill"} />
           </button>
           <button className="round-btn" onClick={nextFrame} title="Next frame">
-            <Icon icon="mingcute:forward-2" />
+            <Icon icon="mingcute:frame-next" />
           </button>
           <span className="control-divider" />
           <label className="fps-control">
@@ -270,14 +272,12 @@ export function TimelinePanel() {
         <strong title={activeLayer.name}>{activeLayer.name}</strong>
         <label className="layer-opacity-control">
           <span>Opacity</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
+          <SegmentedRange
             value={activeLayer.opacity}
-            onChange={(event) => setLayerOpacity(activeLayer.id, Number(event.target.value), sprite.id)}
-            aria-label={`${activeLayer.name} opacity`}
+            ariaLabel={`${activeLayer.name} opacity`}
+            onStart={beginStroke}
+            onChange={(value) => setLayerOpacity(activeLayer.id, value, sprite.id)}
+            onEnd={() => endStroke("Set layer opacity")}
           />
           <output>{Math.round(activeLayer.opacity * 100)}%</output>
         </label>

@@ -3,14 +3,15 @@ import { Icon } from "./Icon";
 import { useUi } from "../store/uiStore";
 import { createBlankProjectTab } from "../store/workspaceActions";
 import {
+  DEFAULT_CANVAS_SIZE,
   DEFAULT_CHARACTER_FRAME_COUNT,
-  MAX_DIMENSION,
   MAX_FRAMES_PER_SPRITE,
   MAX_PROJECT_NAME_LENGTH,
+  MAX_DIMENSION,
 } from "../projectLimits";
 import type { SpriteKind } from "../types";
 
-const NEW_PROJECT_SETTINGS_KEY = "pixel-art-tutor.new-project-settings.v1";
+const NEW_PROJECT_SETTINGS_KEY = "pixel-art-tutor.new-project-settings.v2";
 
 interface NewProjectDraft {
   name: string;
@@ -22,8 +23,8 @@ interface NewProjectDraft {
 
 const DEFAULT_DRAFT: NewProjectDraft = {
   name: "Untitled",
-  width: MAX_DIMENSION,
-  height: MAX_DIMENSION,
+  width: DEFAULT_CANVAS_SIZE,
+  height: DEFAULT_CANVAS_SIZE,
   frameCount: DEFAULT_CHARACTER_FRAME_COUNT,
   kind: "character",
 };

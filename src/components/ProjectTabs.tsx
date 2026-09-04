@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { Icon } from "./Icon";
 import { useStore } from "../store/projectStore";
 import { useWorkspace } from "../store/workspaceStore";
-import { useUi } from "../store/uiStore";
 import { closeProjectTab, openProjectTab } from "../store/workspaceActions";
 
 export function ProjectTabs() {
@@ -47,9 +46,6 @@ export function ProjectTabs() {
           </div>
         ))}
       </div>
-      <button className="project-tab-new" onClick={() => useUi.getState().setNewProjectOpen(true)} title="New project" aria-label="New project">
-        <Icon icon="mingcute:add" />
-      </button>
     </div>
   );
 }

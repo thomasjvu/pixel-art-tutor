@@ -62,7 +62,7 @@ await document.modelContext.registerTool({
 | `get_tilemap` | read-only | Map grid as ASCII + tile legend |
 | `ensure_tilemap` | write | Create/resize the tilemap (clamped 2–64) |
 | `export_project` | read-only | Full project JSON |
-| `new_canvas` | write | Fresh blank 256×256 logical canvas with 4 empty frames by default (with confirmation) |
+| `new_canvas` | write | Fresh blank 64×64 logical canvas with 4 empty frames by default (with confirmation) |
 | `rename_project` | write | Rename the project |
 | `save_project` | write | Save named project to the library |
 | `open_project` | write | Open a saved project (with confirmation) |
@@ -125,12 +125,14 @@ Design notes:
   visible, undoable, and autosaved.
 - Colors are accepted as hex strings *or* palette indices; unknown hex colors are auto-added to the
   shared palette (returned to the agent with its new index).
+- In the Colors inspector, **New blank** starts an explicitly empty palette, while saved palettes
+  can be **Used** as a replacement/remap or **Merged** without disturbing existing indices.
 - Read tools return compact ASCII grids + legends instead of raw arrays, keeping agent token usage low.
 - Tools return `{ ok: false, error }` objects rather than throwing, so agents can self-correct.
 - Registrations are tied to an `AbortController`; React unmount cleanly unregisters every tool.
 - New character sprites and blank canvases use four animation frames unless an explicit
   `frameCount` is supplied. Items and tiles remain one frame by default.
-- The default canvas is a real 256×256 logical pixel grid shown at 1px per cell; zoom remains editable.
+- New blank canvases start as a real 64×64 logical pixel grid shown at 7px per cell; zoom remains editable from 1–16px per cell.
 
 ## Running it
 
@@ -141,9 +143,9 @@ npm install
 ```
 
 `start.sh` owns both local processes and stops them together with Ctrl-C. Use
-`VITE_PARTYKIT_HOST` to point the editor at a deployed PartyKit room worker
-instead of the local one. Existing setups using `VITE_PARTY_HOST` remain
-supported as a legacy alias.
+`VITE_PARTYKIT_HOST` to point the editor at a separately deployed PartyKit room worker
+when needed; the production deployment described below serves the editor and rooms on one origin.
+Existing setups using `VITE_PARTY_HOST` remain supported as a legacy alias.
 
 The app is fully functional standalone. To give an agent access:
 
@@ -173,8 +175,10 @@ VITE_PARTYKIT_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1
 Open the Vite URL, choose **Room**, create a room, and share its URL. The Room panel also shows an
 **Active rooms** list for one-click joining of rooms that currently have collaborators. The server stores the latest
 project snapshot and recent edit history, broadcasts presence over WebSockets, merges non-conflicting
-pixel edits, and only allows a collaborator to undo their latest room operation. Deploy the room
-worker with `npm run room:deploy`, then set `VITE_PARTYKIT_HOST` to its HTTPS host for production.
+pixel edits, and only allows a collaborator to undo their latest room operation. Deploy the editor and
+room Worker together with `npm run deploy` (or the legacy `npm run room:deploy` alias). Wrangler uploads
+the Vite `dist/` output, configures the `pixel-art-tutor.thomasjvu.com` custom domain, and keeps room
+WebSockets/API routes on that same origin; no `VITE_PARTYKIT_HOST` override is needed there.
 
 Shared rooms are prototype bearer-link rooms: anyone who has a room URL can see and edit that room.
 Display names and colors are presence labels, not verified identity, and there is no authentication or
@@ -184,8 +188,10 @@ New rooms use high-entropy Web Crypto IDs when the browser provides Web Crypto; 
 without it fall back to time/random IDs and must not treat those links as private. Existing short room
 links remain valid. The worker limits each room to 16 connections, each connection to 30 edit/undo/redo
 messages per 10 seconds and
-120 presence messages per 10 seconds, and each message to 4,000,000 characters. These are abuse
-guardrails, not access control. To restrict browser origins, set the worker variable
+120 presence messages per 10 seconds, and each message to 4,000,000 characters. Rooms allow one
+agent by default; change the worker variable `MAX_AGENTS_PER_ROOM` in `wrangler.jsonc` for a
+different cap (including `0` to disable agent presence). These are abuse guardrails, not access
+control. To restrict browser origins, set the worker variable
 `ROOM_ALLOWED_ORIGIN` to the exact deployed app origin; local WebSocket development does not require
 that variable, but a local HTTP origin can be configured explicitly when needed.
 

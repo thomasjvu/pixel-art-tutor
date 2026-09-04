@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "room:dev": "wrangler dev --config wrangler.jsonc --port 1999",
-    "room:deploy": "wrangler deploy --config wrangler.jsonc",
+    "deploy": "npm run build && wrangler deploy --config wrangler.jsonc",
+    "room:deploy": "npm run deploy",
     "build": "tsc -b && tsc -p tsconfig.worker.json --pretty false && vite build",
     "lint": "oxlint",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.worker.json --pretty false",

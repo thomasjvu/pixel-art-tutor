@@ -18,6 +18,7 @@ workspace. Without a connected room, each browser profile has its own localStora
 | `./start.sh` | Start Vite and the local room worker together with sync enabled |
 | `./start.sh --solo` | Start Vite without room synchronization |
 | `VITE_PARTYKIT_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1` | Start Vite with room sync enabled |
+| `npm run deploy` | Build and deploy the Vite app plus PartyServer Worker to Cloudflare and the configured custom domain |
 | `npm run lint` | Lint with oxlint |
 | `npm run typecheck` | Typecheck via `tsc -b` and the worker project |
 | `npm run build` | Typecheck + vite production build |
@@ -122,12 +123,14 @@ build time. Keep host-provided payloads and local fallback selection visibly dis
 - Tags define inclusive frame ranges. Preview supports forward, reverse, and ping-pong playback
   with adjustable FPS; onion skin supports tint and red/blue reference modes.
 - Palette entries retain alpha, can be reordered without changing the artwork's colors, and the
-  UI supports palette grid sizing, copy/paste, and drag/drop. Tiled preview, shading ink, and
-  pixel-perfect stroke, dither brush, and RotSprite-style nearest-neighbor rotation are editor
-  modes/tools, not changes to the project schema.
+  UI supports palette grid sizing, copy/paste, drag/drop, and explicit palette management. The
+  current palette may be blank (all opaque pixels are cleared when it is replaced), and saved
+  palettes can be blank, used as a replacement/remap, or merged non-destructively. Tiled preview,
+  shading ink, and pixel-perfect stroke, dither brush, and RotSprite-style nearest-neighbor
+  rotation are editor modes/tools, not changes to the project schema.
 - Agents can use `set_palette_alpha` and `move_palette_color` for the same palette operations;
   palette reordering remaps stored indices so pixels keep their visible colors.
-- Canvas zoom is an integer pixels-per-cell scale from 1 to 48. The canvas backing store and
+- Canvas zoom is an integer pixels-per-cell scale from 1 to 16. The canvas backing store and
   CSS box use the same scale; oversized views scroll inside the stage.
 - The pixel grid and onion skin are off by default so a new canvas starts clean; both remain
   available from the toolbar, View menu, timeline, and editor tools.
@@ -137,6 +140,8 @@ build time. Keep host-provided payloads and local fallback selection visibly dis
 - The timeline reserves 330px on desktop (370px on compact layouts) so roughly two layer rows
   remain visible. Hiding the toolbar or inspector collapses that rail to a 26px reveal tab and
   gives its saved space back to the center editor.
+- The inspector opens on the Room panel by default so collaborative room presence and agent status
+  are visible immediately; users can switch panels from the native-feeling panel picker.
 
 The File menu imports one or multiple raster images as sprite cels. Share > Share project creates
 a lightweight project permalink and offers the device share sheet plus X, Reddit, Threads,

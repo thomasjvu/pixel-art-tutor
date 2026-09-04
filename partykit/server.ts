@@ -6,6 +6,8 @@ import {
   isActiveRoomListing,
   isRoomPatch,
   isProject,
+  DEFAULT_MAX_AGENTS_PER_ROOM,
+  normalizeMaxAgentsPerRoom,
   ROOM_PROTOCOL_VERSION,
   type ActorKind,
   type ActiveRoomListing,
@@ -64,12 +66,17 @@ interface RoomErrorOptions {
   includeSnapshot?: boolean;
   operationId?: string;
   scope?: RoomErrorScope;
+  code?: "agent_limit";
 }
 
 interface RoomEnv {
   PixelRoom: DurableObjectNamespace<PixelRoom>;
   RoomDirectory: DurableObjectNamespace;
+  /** Bound in deployed Workers; absent during a room-only local dev session. */
+  ASSETS?: Fetcher;
   ROOM_ALLOWED_ORIGIN?: string;
+  /** Optional deployment override; invalid values fall back to one agent. */
+  MAX_AGENTS_PER_ROOM?: string;
 }
 
 function text(value: unknown, fallback: string, maxLength: number): string {
@@ -384,8 +391,17 @@ export class PixelRoom extends Server<RoomEnv> {
       this.sendError(connection, "A valid project is required to join this room.");
       return;
     }
+    const requestedKind = actorKind(message.kind);
+    if (requestedKind === "agent" && this.agentCount() >= this.maxAgentsPerRoom()) {
+      this.sendError(
+        connection,
+        this.agentLimitMessage(),
+        { code: "agent_limit" },
+      );
+      return;
+    }
     state.name = text(message.name, state.name, 32);
-    state.kind = actorKind(message.kind);
+    state.kind = requestedKind;
     state.color = color(message.color, state.color);
     state.presence = {
       ...state.presence,
@@ -459,6 +475,10 @@ export class PixelRoom extends Server<RoomEnv> {
     if (!state?.ready) return;
     const next = presenceValue(value, state.presence);
     if (!next) return;
+    if (next.kind === "agent" && state.kind !== "agent" && this.agentCount() >= this.maxAgentsPerRoom()) {
+      this.sendError(connection, this.agentLimitMessage(), { code: "agent_limit" });
+      return;
+    }
     state.presence = { ...next, id: state.clientId };
     state.name = next.name;
     state.kind = next.kind;
@@ -698,6 +718,7 @@ export class PixelRoom extends Server<RoomEnv> {
         project: this.roomState.project,
         peers: this.presences(),
         latestOperation: summary(this.roomState.history[this.roomState.history.length - 1] ?? null),
+        maxAgents: this.maxAgentsPerRoom(),
       }),
     );
   }
@@ -733,6 +754,7 @@ export class PixelRoom extends Server<RoomEnv> {
         type: "room_error",
         protocol: ROOM_PROTOCOL_VERSION,
         scope: normalized.scope ?? "request",
+        ...(normalized.code ? { code: normalized.code } : {}),
         ...(normalized.operationId ? { operationId: normalized.operationId } : {}),
         message,
         ...(normalized.includeSnapshot && this.roomState
@@ -749,6 +771,20 @@ export class PixelRoom extends Server<RoomEnv> {
         return state?.ready ? state.presence : null;
       })
       .filter((presence): presence is RoomPresence => Boolean(presence));
+  }
+
+  private maxAgentsPerRoom(): number {
+    return normalizeMaxAgentsPerRoom(this.env.MAX_AGENTS_PER_ROOM ?? DEFAULT_MAX_AGENTS_PER_ROOM);
+  }
+
+  private agentCount(): number {
+    return this.presences().filter((presence) => presence.kind === "agent").length;
+  }
+
+  private agentLimitMessage(): string {
+    const limit = this.maxAgentsPerRoom();
+    if (limit === 0) return "Agents are disabled for this room.";
+    return `This room already has its ${limit === 1 ? "one" : `${limit}`} agent slot${limit === 1 ? "" : "s"}.`;
   }
 
   private broadcastPresence(): void {
@@ -899,13 +935,13 @@ export default {
           Vary: "Origin",
         }
       : false;
-    return (
-      (await routePartykitRequest<RoomEnv>(request, env, {
-        cors,
-        onBeforeConnect: (req) => originGuard(req, allowedOrigin),
-        onBeforeRequest: (req) => originGuard(req, allowedOrigin),
-      })) ??
-      new Response("Pixel room server", { status: 404 })
-    );
+    const partyResponse = await routePartykitRequest<RoomEnv>(request, env, {
+      cors,
+      onBeforeConnect: (req) => originGuard(req, allowedOrigin),
+      onBeforeRequest: (req) => originGuard(req, allowedOrigin),
+    });
+    if (partyResponse) return partyResponse;
+
+    return env.ASSETS?.fetch(request) ?? new Response("Pixel room server", { status: 404 });
   },
 } satisfies ExportedHandler<RoomEnv>;

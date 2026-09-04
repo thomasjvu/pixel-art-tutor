@@ -3,6 +3,20 @@
   "name": "pixel-art-tutor-room",
   "main": "partykit/server.ts",
   "compatibility_date": "2026-08-26",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    {
+      "pattern": "pixel-art-tutor.thomasjvu.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "MAX_AGENTS_PER_ROOM": "1"
+  },
   "durable_objects": {
     "bindings": [
       {

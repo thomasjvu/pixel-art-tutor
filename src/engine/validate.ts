@@ -265,8 +265,6 @@ export function sanitizeProject(raw: unknown): Project | null {
   const palette = raw.palette
     .slice(0, MAX_PALETTE_COLORS)
     .map((color) => sanitizeColor(color) ?? "#000000");
-  if (palette.length === 0) return null;
-
   const paletteAlpha = Array.from({ length: palette.length }, (_, index) => {
     const value = Array.isArray(raw.paletteAlpha) ? raw.paletteAlpha[index] : 1;
     return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
@@ -506,7 +504,6 @@ export function isCanonicalProject(value: unknown): value is Project {
     return false;
   }
   if (
-    palette.length < 1 ||
     palette.length > MAX_PALETTE_COLORS ||
     !palette.every((color) => typeof color === "string" && CANONICAL_HEX_COLOR.test(color)) ||
     sprites.length < 1 ||

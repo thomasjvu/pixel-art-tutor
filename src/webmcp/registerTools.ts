@@ -1,5 +1,5 @@
 import { useStore } from "../store/projectStore";
-import { useEditor } from "../store/editorStore";
+import { DEFAULT_CANVAS_ZOOM, MAX_CANVAS_ZOOM, useEditor } from "../store/editorStore";
 import { useUi } from "../store/uiStore";
 import type { PixelChange } from "../types";
 import { spriteLayers, TRANSPARENT } from "../types";
@@ -983,11 +983,11 @@ export function registerTutorTools(): AbortController {
       name: "set_canvas_options",
       title: "Set canvas options",
       description:
-        "Set zoom, grid, pixel-perfect stroke, shading ink, tiled preview, and dither brush options. The default canvas is a 256x256 logical grid displayed at 1px per cell; zoom in for detailed editing.",
+        "Set zoom, grid, pixel-perfect stroke, shading ink, tiled preview, and dither brush options. New blank canvases default to a 64x64 logical grid displayed at 7px per cell; zoom out for a wider view or zoom in for detailed editing.",
       inputSchema: {
         type: "object",
         properties: {
-          zoom: { type: "number", minimum: 1, maximum: 48 },
+          zoom: { type: "number", minimum: 1, maximum: MAX_CANVAS_ZOOM },
           showGrid: { type: "boolean" },
           pixelPerfect: { type: "boolean" },
           shadingMode: { type: "boolean" },
@@ -1356,7 +1356,7 @@ export function registerTutorTools(): AbortController {
       name: "new_canvas",
       title: "New blank canvas",
       description:
-        "Replace the current project with a fresh blank 256x256 logical canvas (one empty character sprite, default palette, no tilemap). Defaults to 4 empty animation frames; pass frameCount to choose another count. Requires confirm:true. The human sees the blank canvas immediately; use this to start a new drawing together.",
+        "Replace the current project with a fresh blank 64x64 logical canvas (one empty character sprite, default palette, no tilemap). Defaults to 4 empty animation frames; pass frameCount to choose another count. Requires confirm:true. The human sees the blank canvas immediately; use this to start a new drawing together.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1377,6 +1377,7 @@ export function registerTutorTools(): AbortController {
         await showAgentAction(actionId);
         interruptHumanStroke();
         useStore.getState().resetProject("blank", frameCount);
+        useEditor.getState().setZoom(DEFAULT_CANVAS_ZOOM);
         const after = useStore.getState().activeSprite();
         finishAgentAction(actionId, after ? `Fresh ${after.width}x${after.height} canvas ready` : "Fresh canvas ready");
         log("new_canvas", "started blank canvas");

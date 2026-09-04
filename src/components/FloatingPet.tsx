@@ -5,8 +5,15 @@ import { PetAvatar } from "./PetAvatar";
 
 const POSITION_KEY = "pixel-art-tutor.floating-pet-position.v1";
 const EDGE = 18;
-const DEFAULT_WIDTH = 142;
-const DEFAULT_HEIGHT = 124;
+const STUDIO_UI_SCALE = 1.1;
+const PET_BUTTON_WIDTH = 142;
+const PET_BUTTON_HEIGHT = 124;
+const SPEECH_WIDTH = 168;
+const SPEECH_HEIGHT = 56;
+const DEFAULT_WIDTH = Math.max(PET_BUTTON_WIDTH, SPEECH_WIDTH) * STUDIO_UI_SCALE;
+const DEFAULT_HEIGHT = (SPEECH_HEIGHT + PET_BUTTON_HEIGHT + 8) * STUDIO_UI_SCALE;
+const FOOTER_CLEARANCE = 66;
+const IDLE_MESSAGE = "Ask your agent to connect to WebMCP on this site!";
 
 interface PetPosition {
   x: number;
@@ -38,7 +45,7 @@ function clampPosition(position: PetPosition, width = DEFAULT_WIDTH, height = DE
   if (typeof window === "undefined") return position;
   return {
     x: Math.max(EDGE, Math.min(window.innerWidth - width - EDGE, position.x)),
-    y: Math.max(EDGE, Math.min(window.innerHeight - height - EDGE, position.y)),
+    y: Math.max(EDGE, Math.min(window.innerHeight - height - FOOTER_CLEARANCE, position.y)),
   };
 }
 
@@ -71,33 +78,54 @@ export function FloatingPet() {
   const [position, setPosition] = useState<PetPosition>(readPosition);
   const [dragging, setDragging] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [greeting, setGreeting] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const latestPosition = useRef(position);
   const suppressClick = useRef(false);
+  const greetedActiveState = useRef(false);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 5_000);
     return () => window.clearInterval(id);
   }, []);
 
-  const remoteAgentActive = Object.values(roomPeers).some(
+  const remoteAgent = Object.values(roomPeers).find(
     (peer) =>
       peer.kind === "agent" &&
       isAgentActive(peer.status) &&
       now - peer.updatedAt < 15_000,
   );
+  const remoteAgentActive = Boolean(remoteAgent);
   const agentActive = Boolean(agentPresence && isAgentActive(agentPresence.status)) || remoteAgentActive;
+  const speechMessage = agentActive
+    ? greeting
+      ? "Hello!"
+      : agentPresence?.message ?? remoteAgent?.message ?? "Hello!"
+    : IDLE_MESSAGE;
 
   useEffect(() => {
     latestPosition.current = position;
   }, [position]);
 
   useEffect(() => {
+    if (!agentActive) {
+      greetedActiveState.current = false;
+      return;
+    }
+    if (greetedActiveState.current) return;
+    greetedActiveState.current = true;
+    setGreeting(true);
+    const id = window.setTimeout(() => setGreeting(false), 1_800);
+    return () => window.clearTimeout(id);
+  }, [agentActive]);
+
+  useEffect(() => {
     function keepPetOnscreen() {
       const shell = shellRef.current;
-      const width = shell?.offsetWidth ?? DEFAULT_WIDTH;
-      const height = shell?.offsetHeight ?? DEFAULT_HEIGHT;
+      const rect = shell?.getBoundingClientRect();
+      const width = rect?.width ?? DEFAULT_WIDTH;
+      const height = rect?.height ?? DEFAULT_HEIGHT;
       setPosition((current) => {
         const next = clampPosition(current, width, height);
         latestPosition.current = next;
@@ -138,8 +166,8 @@ export function FloatingPet() {
     const shell = shellRef.current;
     const next = clampPosition(
       { x: event.clientX - drag.offsetX, y: event.clientY - drag.offsetY },
-      shell?.offsetWidth ?? DEFAULT_WIDTH,
-      shell?.offsetHeight ?? DEFAULT_HEIGHT,
+      shell?.getBoundingClientRect().width ?? DEFAULT_WIDTH,
+      shell?.getBoundingClientRect().height ?? DEFAULT_HEIGHT,
     );
     latestPosition.current = next;
     setPosition(next);
@@ -170,12 +198,15 @@ export function FloatingPet() {
       ref={shellRef}
       className={`floating-pet ${agentActive ? "active" : "inactive"}${dragging ? " dragging" : ""}`}
       data-agent-active={agentActive ? "true" : "false"}
-      style={{ transform: `translate3d(${position.x}px, ${position.y}px, 0)` }}
+      style={{ transform: `translate3d(${position.x / STUDIO_UI_SCALE}px, ${position.y / STUDIO_UI_SCALE}px, 0)` }}
     >
+      <div className="floating-pet-bubble" role="status" aria-live="polite">
+        {speechMessage}
+      </div>
       <button
         className="floating-pet-dragger"
         type="button"
-        aria-label={`Open ${pet.name} guide; ${agentActive ? "agent active" : "agent idle"}; drag to move`}
+        aria-label={`Open ${pet.name} guide; ${agentActive ? "agent active" : "agent idle"}; ${speechMessage}; drag to move`}
         title={`${pet.name} · ${agentActive ? "agent active" : "agent idle"} · drag to move`}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}

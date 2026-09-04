@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store/projectStore";
-import { useEditor } from "../store/editorStore";
+import { MAX_CANVAS_ZOOM, useEditor } from "../store/editorStore";
 import { useUi, type AgentPresenceState } from "../store/uiStore";
 import type { RoomPresence } from "../realtime/protocol";
 import { spriteLayers, TRANSPARENT } from "../types";
@@ -76,6 +76,7 @@ export function CanvasStage() {
   const layerLocked = activeLayer?.locked ?? editorLayerLocked;
   const layerVisible = activeLayer?.visible ?? true;
   const agentPresence = useUi((s) => s.agentPresence);
+  const theme = useUi((s) => s.theme);
   const roomPeers = useUi((s) => s.roomPeers);
   const remotePeers = useMemo(() => Object.values(roomPeers), [roomPeers]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -158,13 +159,14 @@ export function CanvasStage() {
     const c = document.createElement("canvas");
     c.width = c.height = cell * 2;
     const cx = c.getContext("2d")!;
-    cx.fillStyle = "#0b0b0b";
+    const dark = theme !== "light";
+    cx.fillStyle = dark ? "#0b0b0b" : "#e1ddd3";
     cx.fillRect(0, 0, cell * 2, cell * 2);
-    cx.fillStyle = "#151515";
+    cx.fillStyle = dark ? "#151515" : "#eeeae1";
     cx.fillRect(0, 0, cell, cell);
     cx.fillRect(cell, cell, cell, cell);
     return c;
-  }, []);
+  }, [theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -612,7 +614,8 @@ export function CanvasStage() {
           <button
             className="zoom-step"
             onClick={() => setZoom(zoom + 1)}
-            title="Zoom in"
+            disabled={zoom >= MAX_CANVAS_ZOOM}
+            title={zoom >= MAX_CANVAS_ZOOM ? `Maximum zoom (${MAX_CANVAS_ZOOM}px per cell)` : "Zoom in"}
             aria-label="Zoom in"
           >
             +

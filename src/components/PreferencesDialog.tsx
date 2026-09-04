@@ -11,6 +11,8 @@ export function PreferencesDialog() {
   const clearShortcut = usePreferences((state) => state.clearShortcut);
   const resetShortcut = usePreferences((state) => state.resetShortcut);
   const resetKeymap = usePreferences((state) => state.resetKeymap);
+  const theme = useUi((state) => state.theme);
+  const setTheme = useUi((state) => state.setTheme);
   const [recording, setRecording] = useState<KeymapAction | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const closeDialog = useCallback(() => {
@@ -69,7 +71,41 @@ export function PreferencesDialog() {
             <Icon icon="mingcute:close-circle" />
           </button>
         </div>
-        <p className="dialog-intro">Make the editor feel like yours. Click a shortcut, then press a key or key combination.</p>
+        <p className="dialog-intro">Make the editor feel like yours. Choose a calm working surface and tune your shortcuts.</p>
+
+        <section className="preferences-appearance" aria-labelledby="appearance-heading">
+          <div className="preferences-section-heading">
+            <h3 id="appearance-heading">Appearance</h3>
+          </div>
+          <div className="theme-options" role="radiogroup" aria-label="Color theme">
+            <label className={theme === "dark" ? "theme-option active" : "theme-option"}>
+              <input
+                type="radio"
+                name="studio-theme"
+                value="dark"
+                checked={theme === "dark"}
+                onChange={() => setTheme("dark")}
+              />
+              <span className="theme-option-copy">
+                <strong>Dark</strong>
+                <small>Off-black · Undertale</small>
+              </span>
+            </label>
+            <label className={theme === "light" ? "theme-option active" : "theme-option"}>
+              <input
+                type="radio"
+                name="studio-theme"
+                value="light"
+                checked={theme === "light"}
+                onChange={() => setTheme("light")}
+              />
+              <span className="theme-option-copy">
+                <strong>Light</strong>
+                <small>Off-white · paper</small>
+              </span>
+            </label>
+          </div>
+        </section>
 
         <div className="preferences-section-heading">
           <h3>Keyboard shortcuts</h3>

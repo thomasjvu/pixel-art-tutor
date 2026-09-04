@@ -4,6 +4,8 @@ export const MAX_PALETTE_COLORS = 64;
 export const MAX_SPRITES = 128;
 export const MAX_FRAMES_PER_SPRITE = 32;
 export const DEFAULT_CHARACTER_FRAME_COUNT = 4;
+/** Default logical width and height for a new blank canvas. */
+export const DEFAULT_CANVAS_SIZE = 64;
 export const MAX_LAYERS_PER_SPRITE = 32;
 /** Maximum width/height for a sprite or canvas in logical pixels. */
 export const MAX_DIMENSION = 256;

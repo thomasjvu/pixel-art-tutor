@@ -2,9 +2,11 @@ import { PartySocket } from "partysocket";
 import {
   applyRoomPatch,
   cloneProject,
+  DEFAULT_MAX_AGENTS_PER_ROOM,
   isActiveRoomListing,
   isProject,
   mergeProjectChanges,
+  normalizeMaxAgentsPerRoom,
   parseRoomMessage,
   projectChangeToRoomPatch,
   ROOM_PROTOCOL_VERSION,
@@ -229,6 +231,7 @@ export class RoomClient {
       roomError: null,
       roomSeq: 0,
       roomSyncBlocked: false,
+      roomAgentLimit: null,
     });
   }
 
@@ -254,6 +257,7 @@ export class RoomClient {
         roomError: null,
         roomSeq: 0,
         roomSyncBlocked: false,
+        roomAgentLimit: null,
       });
       return;
     }
@@ -309,7 +313,12 @@ export class RoomClient {
     const value = next.trim().slice(0, 32) || "You";
     this.name = value;
     saveStorageValue(DISPLAY_NAME_KEY, value);
-    this.updatePresence({ name: value, kind: "human", message: "Browsing the studio" });
+    const ui = useUi.getState();
+    this.updatePresence({
+      name: ui.actAsAgent ? (ui.selectedPet?.name ?? "Studio Guide") : value,
+      kind: ui.actAsAgent ? "agent" : "human",
+      message: "Browsing the studio",
+    });
     useUi.getState().setRoomConnection({ roomDisplayName: value });
   }
 
@@ -380,6 +389,7 @@ export class RoomClient {
       roomStatus: host ? "connecting" : "disabled",
       roomSeq: 0,
       roomSyncBlocked: false,
+      roomAgentLimit: null,
     });
     if (!host) return;
 
@@ -426,12 +436,16 @@ export class RoomClient {
     this.ready = false;
     this.snapshotRequestOutstanding = false;
     useUi.getState().setRoomConnection({ roomStatus: "connecting", roomError: null });
+    const ui = useUi.getState();
+    const kind = ui.actAsAgent ? "agent" : "human";
+    const name = ui.actAsAgent ? (ui.selectedPet?.name ?? "Studio Guide") : this.name;
+    this.presence = { ...this.presence, name, kind, updatedAt: Date.now() };
     const sent = this.send({
       type: "hello",
       protocol: ROOM_PROTOCOL_VERSION,
       clientId: this.id,
-      name: this.name,
-      kind: "human",
+      name,
+      kind,
       color: this.color,
       project: cloneProject(useStore.getState().project),
     });
@@ -490,6 +504,7 @@ export class RoomClient {
       roomError: null,
       roomSeq: message.seq,
       roomSyncBlocked: false,
+      roomAgentLimit: normalizeMaxAgentsPerRoom(message.maxAgents ?? DEFAULT_MAX_AGENTS_PER_ROOM),
     });
     this.onPresenceState(message.peers);
 
@@ -688,6 +703,28 @@ export class RoomClient {
   }
 
   private onRoomError(message: RoomErrorMessage): void {
+    if (message.code === "agent_limit") {
+      const wasReady = this.ready;
+      useUi.getState().setActAsAgent(false);
+      if (!wasReady) {
+        const room = this.activeRoomId;
+        this.closeSocket();
+        this.setRoomError(message.message, "error");
+        if (room) {
+          window.setTimeout(() => {
+            if (this.activeRoomId === room && !this.ready) this.connect(room);
+          }, 0);
+        }
+        return;
+      }
+      this.updatePresence({
+        name: this.displayName,
+        kind: "human",
+        status: "idle",
+        message: "Browsing the studio",
+        preview: [],
+      });
+    }
     const validProject = isProject(message.project) ? message.project : undefined;
     const inFlight = this.inFlightOperation;
     const matchesInFlight =

@@ -4,6 +4,7 @@ import { Icon } from "./Icon";
 import { SpriteThumb } from "./SpriteThumb";
 import type { Sprite, SpriteKind } from "../types";
 import { downloadText } from "../engine/exportImage";
+import { DEFAULT_CANVAS_SIZE } from "../projectLimits";
 import {
   DEFAULT_CHARACTER_FRAME_COUNT,
   MAX_FRAMES_PER_SPRITE,
@@ -33,8 +34,8 @@ export function SpritesPanel() {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     const n = String(data.get("name") ?? "").trim() || "Untitled";
-    const w = Math.max(1, Math.min(MAX_DIMENSION, Number(data.get("width")) || MAX_DIMENSION));
-    const h = Math.max(1, Math.min(MAX_DIMENSION, Number(data.get("height")) || MAX_DIMENSION));
+    const w = Math.max(1, Math.min(MAX_DIMENSION, Number(data.get("width")) || DEFAULT_CANVAS_SIZE));
+    const h = Math.max(1, Math.min(MAX_DIMENSION, Number(data.get("height")) || DEFAULT_CANVAS_SIZE));
     const k = (String(data.get("kind")) || "character") as SpriteKind;
     const requestedFrames = Number(data.get("frameCount"));
     const frameCount = Number.isInteger(requestedFrames) ? requestedFrames : undefined;
@@ -96,11 +97,11 @@ export function SpritesPanel() {
         <div className="panel-row">
           <label className="field">
             <span>Width</span>
-            <input name="width" type="number" min={1} max={MAX_DIMENSION} defaultValue={MAX_DIMENSION} list="common-sizes" toolparamdescription="Canvas width in logical pixels, up to 256." />
+            <input name="width" type="number" min={1} max={MAX_DIMENSION} defaultValue={DEFAULT_CANVAS_SIZE} list="common-sizes" toolparamdescription="Canvas width in logical pixels, up to 256." />
           </label>
           <label className="field">
             <span>Height</span>
-            <input name="height" type="number" min={1} max={MAX_DIMENSION} defaultValue={MAX_DIMENSION} list="common-sizes" toolparamdescription="Canvas height in logical pixels, up to 256." />
+            <input name="height" type="number" min={1} max={MAX_DIMENSION} defaultValue={DEFAULT_CANVAS_SIZE} list="common-sizes" toolparamdescription="Canvas height in logical pixels, up to 256." />
           </label>
           <datalist id="common-sizes">
             <option value="8" />

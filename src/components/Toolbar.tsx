@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { Icon } from "./Icon";
-import { useEditor } from "../store/editorStore";
+import { MAX_CANVAS_ZOOM, useEditor } from "../store/editorStore";
 import { useStore } from "../store/projectStore";
 import { useUi } from "../store/uiStore";
 import { redoProject, undoProject } from "../realtime/roomClient";
@@ -215,7 +215,14 @@ export function Toolbar() {
           −
         </button>
         <span>{zoom}px</span>
-        <button className="zoom-button" onClick={() => setZoom(zoom + 1)} title="Zoom in" data-tooltip="Zoom in" aria-label="Zoom in">
+        <button
+          className="zoom-button"
+          onClick={() => setZoom(zoom + 1)}
+          disabled={zoom >= MAX_CANVAS_ZOOM}
+          title={zoom >= MAX_CANVAS_ZOOM ? `Maximum zoom (${MAX_CANVAS_ZOOM}px per cell)` : "Zoom in"}
+          data-tooltip={zoom >= MAX_CANVAS_ZOOM ? `Maximum zoom · ${MAX_CANVAS_ZOOM}px per cell` : "Zoom in"}
+          aria-label="Zoom in"
+        >
           +
         </button>
       </div>

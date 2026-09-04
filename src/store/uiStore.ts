@@ -148,6 +148,7 @@ interface UiState {
   roomActorId: string;
   roomDisplayName: string;
   roomHost: string | null;
+  roomAgentLimit: number | null;
   activeRooms: ActiveRoomListing[];
   roomDirectoryStatus: RoomDirectoryStatus;
   roomDirectoryError: string | null;
@@ -192,6 +193,7 @@ interface UiState {
     roomActorId?: string;
     roomDisplayName?: string;
     roomHost?: string | null;
+    roomAgentLimit?: number | null;
   }): void;
   setRoomPeers(peers: RoomPresence[]): void;
   setActiveRooms(
@@ -251,6 +253,7 @@ export const useUi = create<UiState>()((set) => ({
   roomActorId: "",
   roomDisplayName: "",
   roomHost: null,
+  roomAgentLimit: null,
   activeRooms: [],
   roomDirectoryStatus: "idle",
   roomDirectoryError: null,

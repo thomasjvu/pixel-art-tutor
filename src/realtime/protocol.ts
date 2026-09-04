@@ -18,6 +18,21 @@ import {
 // duplicated base project from structural operation payloads.
 export const ROOM_PROTOCOL_VERSION = 3 as const;
 export const MAX_ROOM_PATCH_CELLS = 16_384;
+export const DEFAULT_MAX_AGENTS_PER_ROOM = 1;
+export const MAX_CONFIGURED_AGENTS_PER_ROOM = 16;
+
+/** Keep deployment configuration and client-facing room policy in sync. */
+export function normalizeMaxAgentsPerRoom(value: unknown): number {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isInteger(parsed)
+    ? Math.max(0, Math.min(MAX_CONFIGURED_AGENTS_PER_ROOM, parsed))
+    : DEFAULT_MAX_AGENTS_PER_ROOM;
+}
 
 export type ActorKind = "human" | "agent";
 
@@ -169,6 +184,8 @@ export interface RoomWelcomeMessage {
   project: Project | null;
   peers: RoomPresence[];
   latestOperation: RoomOperationSummary | null;
+  /** Server policy; optional so a rolling deploy can still be read safely. */
+  maxAgents?: number;
 }
 
 export interface RoomPresenceStateMessage {
@@ -199,6 +216,7 @@ export interface RoomErrorMessage {
   type: "room_error";
   protocol: typeof ROOM_PROTOCOL_VERSION;
   scope?: RoomErrorScope;
+  code?: "agent_limit";
   operationId?: string;
   message: string;
   project?: Project;
@@ -359,7 +377,6 @@ function hasProjectShell(project: Project): boolean {
     project.name !== project.name.trim() ||
     project.name.length > MAX_PROJECT_NAME_LENGTH ||
     !Array.isArray(project.palette) ||
-    project.palette.length < 1 ||
     project.palette.length > MAX_PALETTE_COLORS ||
     !project.palette.every(isCanonicalHex) ||
     !Array.isArray(project.sprites) ||
@@ -836,7 +853,12 @@ export function parseRoomMessage(raw: unknown): RoomServerMessage | null {
         (raw.project === null || isProject(raw.project)) &&
         Array.isArray(raw.peers) &&
         raw.peers.every(isPresence) &&
-        (raw.latestOperation === null || isOperationSummary(raw.latestOperation))
+        (raw.latestOperation === null || isOperationSummary(raw.latestOperation)) &&
+        (raw.maxAgents === undefined ||
+          (typeof raw.maxAgents === "number" &&
+            Number.isInteger(raw.maxAgents) &&
+            raw.maxAgents >= 0 &&
+            raw.maxAgents <= MAX_CONFIGURED_AGENTS_PER_ROOM))
         ? (raw as unknown as RoomWelcomeMessage)
         : null;
     case "presence":
@@ -856,6 +878,7 @@ export function parseRoomMessage(raw: unknown): RoomServerMessage | null {
     case "room_error":
       return typeof raw.message === "string" &&
         (raw.scope === undefined || raw.scope === "request" || raw.scope === "room") &&
+        (raw.code === undefined || raw.code === "agent_limit") &&
         (raw.operationId === undefined ||
           (typeof raw.operationId === "string" &&
             raw.operationId.length > 0 &&

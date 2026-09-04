@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useStore } from "../store/projectStore";
 import { useEditor } from "../store/editorStore";
 import { normalizeHex } from "../engine/color";
+import { SegmentedRange } from "./SegmentedRange";
+import { spriteLayers, TRANSPARENT } from "../types";
 
 function hexToHsl(hex: string): [number, number, number] {
   const value = hex.replace("#", "");
@@ -35,22 +37,42 @@ const EMPTY_PALETTE_ALPHA: number[] = [];
 export function PalettePanel() {
   const palette = useStore((s) => s.project.palette);
   const paletteAlpha = useStore((s) => s.project.paletteAlpha ?? EMPTY_PALETTE_ALPHA);
+  const hasArtwork = useStore((s) => s.project.sprites.some((sprite) =>
+    spriteLayers(sprite).some((layer) => layer.frames.some((frame) => frame.pixels.some((pixel) => pixel !== TRANSPARENT))),
+  ));
   const colorIdx = useEditor((s) => s.colorIdx);
   const setColor = useEditor((s) => s.setColor);
   const addPaletteColor = useStore((s) => s.addPaletteColor);
   const replaceColor = useStore((s) => s.replaceColor);
   const setPaletteAlpha = useStore((s) => s.setPaletteAlpha);
+  const replacePalette = useStore((s) => s.replacePalette);
+  const beginStroke = useStore((s) => s.beginStroke);
+  const endStroke = useStore((s) => s.endStroke);
   const movePaletteColor = useStore((s) => s.movePaletteColor);
   const [custom, setCustom] = useState("#38b764");
   const [replaceMode, setReplaceMode] = useState(false);
   const [columns, setColumns] = useState(8);
   const [clipboardStatus, setClipboardStatus] = useState("");
+  const [paletteStatus, setPaletteStatus] = useState("");
+  const selectedAlpha = paletteAlpha[colorIdx] ?? 1;
 
   function addColor() {
     const hex = normalizeHex(custom);
     if (!hex) return;
     const r = addPaletteColor(hex);
     if ("index" in r) setColor(r.index);
+  }
+
+  function makeBlankPalette() {
+    const warning = hasArtwork
+      ? "Start a blank palette? Existing artwork will be cleared because it has no colors to reference."
+      : "Start a blank palette? Add a color before painting.";
+    if (palette.length > 0 && !window.confirm(warning)) return;
+    const result = replacePalette([]);
+    if (result.ok) {
+      setColor(0);
+      setPaletteStatus("Blank palette ready · add a color to paint");
+    } else setPaletteStatus(result.error);
   }
 
   return (
@@ -93,6 +115,15 @@ export function PalettePanel() {
           title="Add a hex color from the clipboard"
         >Paste</button>
       </div>
+      <div className="palette-summary">
+        <div>
+          <strong>Current palette</strong>
+          <span>{palette.length === 0 ? "Blank · 0 colors" : `${palette.length} colors`}</span>
+        </div>
+        <button className="text-btn compact" onClick={makeBlankPalette} title="Replace the current palette with a blank palette">
+          New blank
+        </button>
+      </div>
       <div className="palette-grid" style={{ "--palette-columns": columns } as React.CSSProperties}>
         {palette.map((hex, i) => (
           <button
@@ -115,24 +146,29 @@ export function PalettePanel() {
           />
         ))}
       </div>
+      {palette.length === 0 && (
+        <div className="palette-empty-state">
+          <strong>BLANK PALETTE</strong>
+          <span>Add a hex color below, paste one, or use a saved palette.</span>
+        </div>
+      )}
       {clipboardStatus && <p className="palette-status" role="status">{clipboardStatus}</p>}
+      {paletteStatus && <p className="palette-status" role="status">{paletteStatus}</p>}
       <div className="panel-row">
         {replaceMode && <span className="hint">Click a swatch to remap all “{palette[colorIdx]}” pixels to it</span>}
       </div>
       <div className="palette-alpha-row">
         <label className="alpha-label" htmlFor="palette-alpha">Alpha</label>
-        <input
+        <SegmentedRange
           id="palette-alpha"
           className="alpha-range"
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={paletteAlpha[colorIdx] ?? 1}
-          onChange={(event) => setPaletteAlpha(colorIdx, Number(event.target.value))}
-          aria-label="Selected color alpha"
+          value={selectedAlpha}
+          ariaLabel="Selected color alpha"
+          onStart={beginStroke}
+          onChange={(value) => setPaletteAlpha(colorIdx, value)}
+          onEnd={() => endStroke("Set palette alpha")}
         />
-        <output>{Math.round((paletteAlpha[colorIdx] ?? 1) * 100)}%</output>
+        <output>{Math.round(selectedAlpha * 100)}%</output>
       </div>
       <div className="palette-harmony-row">
         <button
@@ -189,10 +225,12 @@ export function PalettePanel() {
 function PaletteLibrary() {
   const savePaletteAs = useStore((s) => s.savePaletteAs);
   const applyPaletteSave = useStore((s) => s.applyPaletteSave);
+  const replacePaletteSave = useStore((s) => s.replacePaletteSave);
   const deletePaletteSave = useStore((s) => s.deletePaletteSave);
   const listPaletteSaves = useStore((s) => s.listPaletteSaves);
   const [draft, setDraft] = useState("");
   const [saves, setSaves] = useState(() => listPaletteSaves());
+  const [status, setStatus] = useState("");
   const refresh = () => setSaves(listPaletteSaves());
 
   function save() {
@@ -203,15 +241,29 @@ function PaletteLibrary() {
     }
     setDraft("");
     refresh();
+    setStatus(`Saved “${result.name}”`);
   }
 
   function apply(name: string) {
     const result = applyPaletteSave(name);
-    if (!result.ok) alert(`Could not apply palette: ${result.error}`);
+    if (!result.ok) setStatus(result.error);
+    else setStatus(result.added > 0 ? `Merged ${result.added} color${result.added === 1 ? "" : "s"}` : "No new colors to merge");
+  }
+
+  function applySavedPalette(name: string) {
+    const result = replacePaletteSave(name);
+    if (!result.ok) setStatus(result.error);
+    else setStatus(`Using “${name}” · ${result.colors} color${result.colors === 1 ? "" : "s"}`);
   }
 
   return (
     <div>
+      <div className="palette-library-heading">
+        <div>
+          <strong>Saved palettes</strong>
+          <span>Keep a blank, compact, or project-specific set ready.</span>
+        </div>
+      </div>
       <div className="panel-row">
         <input
           className="text-input grow"
@@ -224,16 +276,24 @@ function PaletteLibrary() {
             if (e.key === "Enter") save();
           }}
         />
-        <button className="text-btn" onClick={save} title="Save the current palette">
-          Save palette
+        <button className="text-btn" onClick={save} title="Save the current palette, including alpha values">
+          Save current
         </button>
       </div>
-      {saves.length === 0 && <p className="hint">No saved palettes yet.</p>}
+      {status && <p className="palette-status" role="status">{status}</p>}
+      {saves.length === 0 && <p className="hint">No saved palettes yet. Save the current palette to create your first one.</p>}
       <ul className="log-list">
         {saves.map((s) => (
           <li key={s.name}>
-            <button className="text-btn grow" onClick={() => apply(s.name)} title={`Merge '${s.name}' into this project`}>
-              {s.name}
+            <div className="palette-save-copy">
+              <strong>{s.name}</strong>
+              <span>{s.colorCount === 0 ? "blank palette" : `${s.colorCount} colors`}</span>
+            </div>
+            <button className="text-btn compact" onClick={() => applySavedPalette(s.name)} title={`Replace the current palette with '${s.name}'`}>
+              Use
+            </button>
+            <button className="text-btn compact" onClick={() => apply(s.name)} title={`Merge '${s.name}' into this project`}>
+              Merge
             </button>
             <button
               className="icon-btn"

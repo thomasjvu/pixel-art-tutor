@@ -4,8 +4,10 @@ import type { PlaybackMode } from "../types";
 export type ToolName = "pencil" | "eraser" | "fill" | "picker" | "select";
 export type BrushMode = "solid" | "checker" | "dots";
 
-/** A 256×256 logical canvas renders at one CSS pixel per cell by default. */
-export const DEFAULT_CANVAS_ZOOM = 1;
+/** New blank canvases open at a comfortable 7 CSS pixels per logical cell. */
+export const DEFAULT_CANVAS_ZOOM = 7;
+export const MIN_CANVAS_ZOOM = 1;
+export const MAX_CANVAS_ZOOM = 16;
 export const DEFAULT_TIMELINE_HEIGHT = 330;
 export const MIN_TIMELINE_HEIGHT = 112;
 export const MAX_TIMELINE_HEIGHT = 560;
@@ -22,17 +24,17 @@ function clampTimelineHeight(value: number): number {
 }
 
 function readTimelineSettings(): TimelineSettings {
-  if (typeof window === "undefined") return { open: true, height: DEFAULT_TIMELINE_HEIGHT };
+  if (typeof window === "undefined") return { open: false, height: DEFAULT_TIMELINE_HEIGHT };
   try {
     const raw = window.localStorage.getItem(TIMELINE_SETTINGS_KEY);
-    if (!raw) return { open: true, height: DEFAULT_TIMELINE_HEIGHT };
+    if (!raw) return { open: false, height: DEFAULT_TIMELINE_HEIGHT };
     const saved = JSON.parse(raw) as Partial<TimelineSettings>;
     return {
       open: saved.open !== false,
       height: typeof saved.height === "number" ? clampTimelineHeight(saved.height) : DEFAULT_TIMELINE_HEIGHT,
     };
   } catch {
-    return { open: true, height: DEFAULT_TIMELINE_HEIGHT };
+    return { open: false, height: DEFAULT_TIMELINE_HEIGHT };
   }
 }
 
@@ -131,7 +133,7 @@ export const useEditor = create<EditorState>()((set) => ({
   timelineHeight: timelineSettings.height,
   setTool: (tool) => set({ tool }),
   setColor: (colorIdx) => set({ colorIdx }),
-  setZoom: (z) => set({ zoom: Math.max(1, Math.min(48, Math.round(z))) }),
+  setZoom: (z) => set({ zoom: Math.max(MIN_CANVAS_ZOOM, Math.min(MAX_CANVAS_ZOOM, Math.round(z))) }),
   setLayerLocked: (layerLocked) => set({ layerLocked }),
   setLayerVisible: (layerVisible) => set({ layerVisible }),
   setActiveLayerId: (activeLayerId) => set({ activeLayerId }),

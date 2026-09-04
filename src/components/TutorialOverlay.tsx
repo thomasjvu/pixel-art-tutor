@@ -30,7 +30,6 @@ export function TutorialOverlay() {
         </div>
         <div className="tutorial-main">
           <div className="tutorial-head">
-            <span className="tutorial-kicker">GUIDED TOUR</span>
             <span className="tutorial-count">
               STEP {Math.min(step + 1, total)}/{total}
             </span>

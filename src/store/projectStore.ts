@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import type { BrushMode, SelectionRect } from "./editorStore";
 import { TRANSPARENT } from "../types";
-import { normalizeHex, resolveColorInto } from "../engine/color";
+import { hexToRgb, normalizeHex, resolveColorInto } from "../engine/color";
 import {
   bresenhamLine,
   clampRect,
@@ -26,7 +26,7 @@ import {
   rotate90,
   shiftWrap,
 } from "../engine/pixels";
-import { blankProject, BLANK_CANVAS_SIZE, createStarterProject } from "../engine/seed";
+import { blankProject, createStarterProject } from "../engine/seed";
 import { sanitizeProject } from "../engine/validate";
 import { createUniqueId } from "./projectIds";
 import {
@@ -179,6 +179,12 @@ function isBlendMode(value: unknown): value is BlendMode {
   return value === "normal" || value === "multiply" || value === "screen" || value === "overlay";
 }
 
+function colorDistance(a: string, b: string): number {
+  const [ar, ag, ab] = hexToRgb(a);
+  const [br, bg, bb] = hexToRgb(b);
+  return (ar - br) ** 2 + (ag - bg) ** 2 + (ab - bb) ** 2;
+}
+
 function preserveRejectedStoredProject(raw: string): void {
   storedRecoveryRaw = raw.slice(0, MAX_PROJECT_JSON_LENGTH);
   try {
@@ -187,46 +193,6 @@ function preserveRejectedStoredProject(raw: string): void {
     /* Keep the in-memory copy when storage is unavailable or full. */
   }
   console.warn(`Saved project data was not usable; a recovery copy is available as ${STORAGE_RECOVERY_KEY}.`);
-}
-
-const LEGACY_BLANK_CANVAS_SIZE = 64;
-
-function upgradeLegacyBlankCanvas(project: Project): Project {
-  const sprite = project.sprites.length === 1 ? project.sprites[0] : null;
-  if (
-    !sprite ||
-    project.tilemap !== null ||
-    sprite.kind !== "character" ||
-    sprite.width !== LEGACY_BLANK_CANVAS_SIZE ||
-    sprite.height !== LEGACY_BLANK_CANVAS_SIZE
-  ) {
-    return project;
-  }
-  const sourceFrames = sprite.layers?.length ? sprite.layers.flatMap((layer) => layer.frames) : sprite.frames;
-  if (sourceFrames.length === 0 || sourceFrames.some((frame) => frame.pixels.some((pixel) => pixel !== TRANSPARENT))) {
-    return project;
-  }
-
-  const next = cloneProject(project);
-  const nextSprite = next.sprites[0]!;
-  nextSprite.width = BLANK_CANVAS_SIZE;
-  nextSprite.height = BLANK_CANVAS_SIZE;
-  const blankPixels = () => new Array(BLANK_CANVAS_SIZE * BLANK_CANVAS_SIZE).fill(TRANSPARENT);
-  const nextLayers = (nextSprite.layers?.length ? nextSprite.layers : [{
-    id: `${nextSprite.id}-artwork`,
-    name: "Artwork",
-    visible: true,
-    locked: false,
-    opacity: 1,
-    blendMode: "normal" as const,
-    frames: nextSprite.frames,
-  }]).map((layer) => ({
-    ...layer,
-    frames: layer.frames.map((frame) => ({ ...frame, pixels: blankPixels() })),
-  }));
-  nextSprite.layers = nextLayers;
-  nextSprite.frames = nextLayers[0]!.frames;
-  return next;
 }
 
 function loadStored(): Project | null {
@@ -244,16 +210,8 @@ function loadStored(): Project | null {
       preserveRejectedStoredProject(raw);
       initialStorageStatus = "unavailable";
     } else {
-      const project = upgradeLegacyBlankCanvas(sanitized);
-      if (project !== sanitized) {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
-        } catch {
-          initialStorageStatus = "unavailable";
-        }
-      }
-      if (initialStorageStatus !== "unavailable") initialStorageStatus = "saved";
-      return project;
+      initialStorageStatus = "saved";
+      return sanitized;
     }
     return null;
   } catch {
@@ -329,6 +287,14 @@ export interface SaveEntry {
   savedAt: number;
 }
 
+export interface PaletteSaveEntry extends SaveEntry {
+  colorCount: number;
+}
+
+export type PaletteReplaceResult =
+  | { ok: true; colors: number; remapped: number; cleared: number }
+  | { ok: false; error: string };
+
 function cleanSaveName(name: unknown): string | null {
   const next = typeof name === "string" ? name.trim().slice(0, MAX_SAVE_NAME_LENGTH) : "";
   return next ? next : null;
@@ -362,16 +328,30 @@ function writeSaveSlots(key: string, slots: { name: string; savedAt: number; dat
   }
 }
 
-function readPaletteSlots(): { name: string; savedAt: number; colors: string[] }[] {
-  const slots: { name: string; savedAt: number; colors: string[] }[] = [];
+function readPaletteSlots(): { name: string; savedAt: number; colors: string[]; alpha: number[] }[] {
+  const slots: { name: string; savedAt: number; colors: string[]; alpha: number[] }[] = [];
   for (const slot of readSaveSlots(PALETTE_SAVES_KEY)) {
-    if (!Array.isArray(slot.data)) continue;
+    const sourceColors = Array.isArray(slot.data)
+      ? slot.data
+      : slot.data && typeof slot.data === "object" && !Array.isArray(slot.data) && Array.isArray((slot.data as { colors?: unknown }).colors)
+        ? (slot.data as { colors: unknown[] }).colors
+        : null;
+    if (!sourceColors) continue;
+    const sourceAlpha =
+      slot.data && typeof slot.data === "object" && !Array.isArray(slot.data) && Array.isArray((slot.data as { alpha?: unknown }).alpha)
+        ? (slot.data as { alpha: unknown[] }).alpha
+        : [];
     const colors: string[] = [];
-    for (const hex of slot.data) {
+    const alpha: number[] = [];
+    for (let index = 0; index < sourceColors.length; index++) {
+      const hex = sourceColors[index];
       const normalized = normalizeHex(hex);
-      if (normalized && !colors.includes(normalized)) colors.push(normalized);
+      if (!normalized || colors.includes(normalized)) continue;
+      colors.push(normalized);
+      const value = sourceAlpha[index];
+      alpha.push(typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1);
     }
-    if (colors.length > 0) slots.push({ name: slot.name, savedAt: slot.savedAt, colors });
+    slots.push({ name: slot.name, savedAt: slot.savedAt, colors, alpha });
   }
   return slots;
 }
@@ -438,6 +418,7 @@ interface ProjectState {
   addPaletteColor(hex: string): { index: number } | { error: string };
   setPaletteAlpha(index: number, alpha: number): boolean;
   movePaletteColor(fromIndex: number, toIndex: number): boolean;
+  replacePalette(colors: string[], alpha?: number[]): PaletteReplaceResult;
   setActiveSprite(spriteId: string, frameIndex?: number): boolean;
   addSprite(opts: {
     name: string;
@@ -487,9 +468,10 @@ interface ProjectState {
   saveProjectAs(name?: string): { ok: true; name: string } | { ok: false; error: string };
   openProjectSave(name: string): { ok: true } | { ok: false; error: string };
   deleteProjectSave(name: string): boolean;
-  listPaletteSaves(): SaveEntry[];
+  listPaletteSaves(): PaletteSaveEntry[];
   savePaletteAs(name?: string): { ok: true; name: string } | { ok: false; error: string };
   applyPaletteSave(name: string): { ok: true; added: number } | { ok: false; error: string };
+  replacePaletteSave(name: string): PaletteReplaceResult;
   deletePaletteSave(name: string): boolean;
   applyRoomProject(p: Project): boolean;
   dismissStorageRecovery(): void;
@@ -664,6 +646,8 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     setColorAt(x, y, colorIdx, layerId) {
+      const palette = get().project.palette;
+      if (colorIdx !== TRANSPARENT && (!Number.isInteger(colorIdx) || colorIdx < 0 || colorIdx >= palette.length)) return;
       const t = get().resolveTarget(undefined, undefined, layerId);
       if ("error" in t) return;
       const { sprite, layer, frameIndex } = t;
@@ -686,6 +670,8 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     drawLine(from, to, colorIdx, layerId, pixelPerfect = true, brushMode: BrushMode = "solid") {
+      const palette = get().project.palette;
+      if (colorIdx !== TRANSPARENT && (!Number.isInteger(colorIdx) || colorIdx < 0 || colorIdx >= palette.length)) return;
       const t = get().resolveTarget(undefined, undefined, layerId);
       if ("error" in t) return;
       const { sprite, layer, frameIndex } = t;
@@ -1046,6 +1032,59 @@ export const useStore = create<ProjectState>()((set, get) => {
       }
       commit(next, undefined, "local", "Reorder palette", { kind: "palette" });
       return true;
+    },
+
+    replacePalette(colors, alpha) {
+      if (!Array.isArray(colors)) return { ok: false, error: "palette colors must be an array" };
+      const nextColors: string[] = [];
+      const nextAlpha: number[] = [];
+      for (let index = 0; index < Math.min(colors.length, MAX_PALETTE_COLORS); index++) {
+        const normalized = normalizeHex(colors[index]!);
+        if (!normalized) return { ok: false, error: `palette color ${index + 1} is not a valid hex color` };
+        if (nextColors.includes(normalized)) continue;
+        nextColors.push(normalized);
+        const value = alpha?.[index];
+        nextAlpha.push(typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1);
+      }
+
+      const { project } = get();
+      const next = cloneProject(project);
+      const replacements = project.palette.map((source) => {
+        if (nextColors.length === 0) return TRANSPARENT;
+        const exact = nextColors.indexOf(source);
+        if (exact >= 0) return exact;
+        let nearest = 0;
+        let distance = Number.POSITIVE_INFINITY;
+        nextColors.forEach((target, index) => {
+          const candidateDistance = colorDistance(source, target);
+          if (candidateDistance < distance) {
+            distance = candidateDistance;
+            nearest = index;
+          }
+        });
+        return nearest;
+      });
+      let remapped = 0;
+      let cleared = 0;
+      for (const sprite of next.sprites) {
+        for (const layer of sprite.layers ?? []) {
+          for (const frame of layer.frames) {
+            frame.pixels = frame.pixels.map((pixel) => {
+              if (pixel === TRANSPARENT) return TRANSPARENT;
+              const replacement = replacements[pixel] ?? TRANSPARENT;
+              if (replacement === TRANSPARENT) cleared++;
+              else if (replacement !== pixel) remapped++;
+              return replacement;
+            });
+          }
+        }
+      }
+      next.palette = nextColors;
+      next.paletteAlpha = nextAlpha;
+      if (!projectsEqual(project, next)) {
+        commit(next, undefined, "local", "Replace palette", { kind: "palette" });
+      }
+      return { ok: true, colors: nextColors.length, remapped, cleared };
     },
 
     setActiveSprite(spriteId, frameIndex) {
@@ -1694,7 +1733,7 @@ export const useStore = create<ProjectState>()((set, get) => {
     },
 
     listPaletteSaves() {
-      return readPaletteSlots().map(({ name, savedAt }) => ({ name, savedAt }));
+      return readPaletteSlots().map(({ name, savedAt, colors }) => ({ name, savedAt, colorCount: colors.length }));
     },
 
     savePaletteAs(name) {
@@ -1705,7 +1744,15 @@ export const useStore = create<ProjectState>()((set, get) => {
       if (slots.length >= MAX_SAVED_PALETTES) {
         return { ok: false, error: `palette library is full (${MAX_SAVED_PALETTES} saves max)` };
       }
-      slots.unshift({ name: clean, savedAt: Date.now(), data: [...get().project.palette] });
+      const current = get().project;
+      slots.unshift({
+        name: clean,
+        savedAt: Date.now(),
+        data: {
+          colors: [...current.palette],
+          alpha: current.palette.map((_, index) => current.paletteAlpha?.[index] ?? 1),
+        },
+      });
       if (!writeSaveSlots(PALETTE_SAVES_KEY, slots)) {
         return { ok: false, error: "local storage is unavailable or full" };
       }
@@ -1718,16 +1765,28 @@ export const useStore = create<ProjectState>()((set, get) => {
       const slot = readPaletteSlots().find((s) => s.name === clean);
       if (!slot) return { ok: false, error: `no saved palette named '${clean}'` };
       const next = cloneProject(get().project);
+      const nextAlpha = next.palette.map((_, index) => get().project.paletteAlpha?.[index] ?? 1);
       let added = 0;
-      for (const hex of slot.colors) {
+      for (let index = 0; index < slot.colors.length; index++) {
+        const hex = slot.colors[index]!;
         if (next.palette.includes(hex)) continue;
         if (next.palette.length >= MAX_PALETTE_COLORS) break;
         next.palette.push(hex);
+        nextAlpha.push(slot.alpha[index] ?? 1);
         added++;
       }
+      if (added > 0) next.paletteAlpha = nextAlpha;
       // Merge-only: existing indices never move, so artwork is untouched.
       if (added > 0) commit(next, undefined, "local", "Apply palette", { kind: "palette" });
       return { ok: true, added };
+    },
+
+    replacePaletteSave(name) {
+      const clean = cleanSaveName(name);
+      if (!clean) return { ok: false, error: "name must be a non-empty string" };
+      const slot = readPaletteSlots().find((s) => s.name === clean);
+      if (!slot) return { ok: false, error: `no saved palette named '${clean}'` };
+      return get().replacePalette(slot.colors, slot.alpha);
     },
 
     deletePaletteSave(name) {

@@ -1,13 +1,13 @@
 :root {
   /* UNDERTALE 1-bit theme: black void, white bone, soul red, Miku-teal accent */
-  --paper: #0a0a0a;
-  --paper-warm: #101010;
-  --paper-deep: #161616;
+  --paper: #0d1112;
+  --paper-warm: #121718;
+  --paper-deep: #1b2021;
   --ink: #f4f4f4;
   --ink-soft: #b8b8b8;
   --ink-faint: #6f6f6f;
-  --line: #3d3d3d;
-  --line-strong: #f4f4f4;
+  --line: #303839;
+  --line-strong: #9ba5a4;
   --red: #ff2e2e;
   --red-dark: #a80000;
   --mint: #39c5bb;
@@ -21,8 +21,8 @@
   --danger-soft: #2b0000;
   --red-soft: #2b0d0d;
   --red-wash: #5c0a0a;
-  --canvas: #050505;
-  --shadow: rgba(0, 0, 0, 0.7);
+  --canvas: #090c0d;
+  --shadow: rgba(0, 0, 0, 0.52);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --font-crt: "VT323", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-pixel: "Press Start 2P", "Courier New", ui-monospace, monospace;
@@ -3145,12 +3145,6 @@ input[type="checkbox"] {
   margin-bottom: 8px;
 }
 
-.tutorial-kicker {
-  color: var(--accent);
-  font-family: var(--font-pixel);
-  font-size: 8px;
-}
-
 .tutorial-count {
   color: var(--ink-soft);
   font-family: var(--font-pixel);
@@ -3262,7 +3256,6 @@ input[type="checkbox"] {
 .status-connection,
 .mcp-chip,
 .kind-badge,
-.tutorial-kicker,
 .tutorial-count {
   font-size: 9px;
 }
@@ -5679,6 +5672,9 @@ body {
   --line-strong: #b8b1a4;
   --canvas: #e7e3da;
   --shadow: rgba(45, 43, 37, 0.16);
+  --mint-dark: #176962;
+  --mint-soft: #dff1ee;
+  --mint-line: #9fcfc9;
   --danger-soft: #f9e5e2;
   --red-soft: #f7e2df;
   color-scheme: light;
@@ -5775,7 +5771,7 @@ body {
 
 .app.theme-light .menu-popover[open] > summary,
 .app.theme-light .menu-item:hover:not(:disabled) {
-  background: #ebe5c5;
+  background: #dff1ee;
 }
 
 .app.theme-light .menu-panel,
@@ -5819,7 +5815,7 @@ body {
 .app.theme-light .active-room-row:hover,
 .app.theme-light .pet-option:hover,
 .app.theme-light .pet-option.active {
-  background: #ebe5c5;
+  background: #dff1ee;
   border-color: #238b84;
 }
 
@@ -6188,8 +6184,8 @@ body {
 .app.theme-light .hud-btn.active,
 .app.theme-light .tab.active,
 .app.theme-light .timeline-tool.active {
-  color: #4b4300;
-  background: #ebe5c5;
+  color: #0d514c;
+  background: #dff1ee;
   border-color: #238b84;
   box-shadow: none !important;
 }
@@ -6410,6 +6406,9 @@ body {
   z-index: 8990;
   top: 0;
   left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: max-content;
   pointer-events: none;
   user-select: none;
@@ -6600,7 +6599,7 @@ body {
 }
 
 .tutorial-count {
-  margin-left: 8px;
+  margin-left: 0;
 }
 
 .tutorial-close {
@@ -6869,4 +6868,1458 @@ body {
 
 .sidebar-heading > .rail-hide {
   margin-left: auto;
+}
+
+/* ================= QUIET SURFACES + PANEL NAV =================
+   The editor keeps its Undertale silhouette, but its chrome sits on softened
+   ink and paper surfaces instead of pure black and bright edge lines. */
+
+.app:not(.theme-light) {
+  --paper: #0d1112;
+  --paper-warm: #121718;
+  --paper-deep: #1b2021;
+  --line: #303839;
+  --line-strong: #9ba5a4;
+  --canvas: #090c0d;
+  --shadow: rgba(0, 0, 0, 0.52);
+  color-scheme: dark;
+  background: var(--paper);
+  border-color: var(--line);
+}
+
+.app:not(.theme-light) .workspace,
+.app:not(.theme-light) .editor-column,
+.app:not(.theme-light) .stage,
+.app:not(.theme-light) .toolbar,
+.app:not(.theme-light) .sidebar,
+.app:not(.theme-light) .sidebar-heading,
+.app:not(.theme-light) .tabs,
+.app:not(.theme-light) .tab-body,
+.app:not(.theme-light) .panel,
+.app:not(.theme-light) .timeline-panel,
+.app:not(.theme-light) .timeline-header,
+.app:not(.theme-light) .timeline-footer,
+.app:not(.theme-light) .statusbar,
+.app:not(.theme-light) .project-tabs,
+.app:not(.theme-light) .menu-bar {
+  background: var(--paper);
+}
+
+.app:not(.theme-light) .stage,
+.app:not(.theme-light) .editor-column,
+.app:not(.theme-light) .tab-body,
+.app:not(.theme-light) .panel {
+  background: var(--paper-warm);
+}
+
+.app:not(.theme-light) .stage-canvas-wrap {
+  background-color: var(--canvas);
+  background-image: repeating-conic-gradient(#101718 0% 25%, #090c0d 0% 50%);
+  border-color: var(--line-strong);
+}
+
+.app:not(.theme-light) .menu-panel,
+.app:not(.theme-light) .callout,
+.app:not(.theme-light) .tool-list.scrollable,
+.app:not(.theme-light) .agent-live-card,
+.app:not(.theme-light) .room-card,
+.app:not(.theme-light) .room-form .field,
+.app:not(.theme-light) .people-list,
+.app:not(.theme-light) .pet-card,
+.app:not(.theme-light) .pet-option,
+.app:not(.theme-light) .new-sprite-form,
+.app:not(.theme-light) .io-details,
+.app:not(.theme-light) .preferences-dialog,
+.app:not(.theme-light) .share-dialog,
+.app:not(.theme-light) .new-project-dialog,
+.app:not(.theme-light) .tutorial-box {
+  background: var(--paper-deep);
+  border-color: var(--line);
+}
+
+.app:not(.theme-light) input,
+.app:not(.theme-light) select,
+.app:not(.theme-light) textarea,
+.app:not(.theme-light) .keymap-input,
+.app:not(.theme-light) .tool-btn,
+.app:not(.theme-light) .tool-toggle,
+.app:not(.theme-light) .zoom-button,
+.app:not(.theme-light) .hud-btn,
+.app:not(.theme-light) .timeline-tool,
+.app:not(.theme-light) .header-icon-btn,
+.app:not(.theme-light) .footer-help,
+.app:not(.theme-light) .project-tab-button {
+  color: var(--ink);
+  background: var(--paper-deep);
+  border-color: var(--line);
+}
+
+.app:not(.theme-light) .toolbar .tool-btn.active,
+.app:not(.theme-light) .toolbar .tool-toggle.active {
+  color: var(--accent) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* The panel picker keeps the inspector's seven views in one calm control. */
+
+.inspector-panel-picker {
+  display: grid;
+  gap: 5px;
+  padding: 8px 12px 10px;
+  background: var(--paper-warm);
+  border-bottom: 1px solid var(--line);
+}
+
+.inspector-panel-picker-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 14px;
+}
+
+.inspector-panel-picker-label label {
+  color: var(--ink-faint);
+  font-family: var(--font-readable);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inspector-panel-picker-control {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  color: var(--accent);
+  background: var(--paper-deep);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.inspector-panel-picker-control > .pixel-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  font-size: 16px;
+}
+
+.inspector-panel-picker-control select {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 2px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-readable);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.inspector-panel-picker-control select:focus {
+  outline: 0;
+}
+
+.panel-status-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--line-strong);
+  border-radius: 50%;
+}
+
+.panel-status-dot.ok {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.panel-status-dot.err {
+  background: var(--danger);
+}
+
+/* Active state is carried by color only. There is no inset rail or top cap. */
+
+.app .sidebar .tab.active,
+.app .tab.active {
+  color: var(--accent) !important;
+  background: transparent !important;
+  border-top-color: transparent !important;
+  border-left-color: transparent !important;
+  border-right-color: transparent !important;
+  border-bottom-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.app .project-tab-button {
+  border-top-color: transparent !important;
+}
+
+.app .project-tab.active .project-tab-button {
+  color: var(--accent) !important;
+  background: transparent !important;
+  border-top-color: transparent !important;
+  opacity: 1;
+}
+
+.app .project-tab:not(.active) .project-tab-button {
+  color: var(--accent) !important;
+  background: transparent !important;
+  opacity: 0.62;
+}
+
+.app .project-tab:nth-child(2):not(.active) .project-tab-button { opacity: 0.54; }
+.app .project-tab:nth-child(3):not(.active) .project-tab-button { opacity: 0.46; }
+.app .project-tab:nth-child(4):not(.active) .project-tab-button { opacity: 0.39; }
+.app .project-tab:nth-child(5):not(.active) .project-tab-button { opacity: 0.33; }
+.app .project-tab:nth-child(6):not(.active) .project-tab-button { opacity: 0.28; }
+.app .project-tab:nth-child(n + 7):not(.active) .project-tab-button { opacity: 0.24; }
+
+.app .project-tab:not(.active):hover .project-tab-button,
+.app .project-tab:not(.active) .project-tab-button:focus-visible {
+  color: var(--accent) !important;
+  background: var(--paper-deep) !important;
+  opacity: 1;
+}
+
+/* Appearance choices are intentionally roomy and keyboard-visible. */
+
+.preferences-appearance {
+  margin-bottom: 21px;
+}
+
+.theme-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  color: var(--ink-soft);
+  background: var(--paper-warm);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.theme-option:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.theme-option.active {
+  color: var(--ink);
+  background: var(--mint-soft);
+  border-color: var(--accent);
+}
+
+.theme-option input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.theme-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.theme-option-copy strong {
+  color: currentColor;
+  font-size: 16px;
+}
+
+.theme-option-copy small {
+  color: var(--ink-faint);
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.agent-slot-count {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-faint);
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.agent-cap-hint {
+  margin: -4px 0 8px 25px;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.app.theme-light .inspector-panel-picker-control,
+.app.theme-light .theme-option {
+  background: #fffdf8;
+}
+
+.app.theme-light .theme-option.active {
+  background: var(--mint-soft);
+}
+
+.app.theme-light .keymap-list {
+  border-top-color: var(--line);
+}
+
+.app.theme-light .keymap-row {
+  border-bottom-color: var(--line);
+}
+
+.app.theme-light .keymap-copy strong {
+  color: var(--ink);
+}
+
+.app.theme-light .keymap-copy span {
+  color: var(--ink-faint);
+}
+
+.app.theme-light .keymap-reset,
+.app.theme-light .keymap-clear {
+  color: var(--ink-soft);
+  border-color: var(--line);
+}
+
+/* The two vertical rails share one surface, so the canvas remains the only
+   strong change in tone across the editor. */
+
+.app .toolbar,
+.app .sidebar,
+.app .sidebar-heading {
+  background: var(--paper) !important;
+}
+
+/* Tab close affordances sit on the tab surface instead of carrying a black
+   block of their own. */
+
+.app .project-tab-close,
+.app .project-tab-close:hover,
+.app .project-tab-close:focus-visible {
+  color: var(--ink-faint);
+  background: transparent !important;
+}
+
+.app .project-tab-close:hover,
+.app .project-tab-close:focus-visible {
+  color: var(--accent);
+}
+
+.sidebar-footnote a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sidebar-footnote a:hover,
+.sidebar-footnote a:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Keep the select semantics and native keyboard behavior, while replacing the
+   browser's closed-state arrow with a quiet pixel chevron. */
+
+.inspector-panel-picker-control {
+  position: relative;
+  padding-right: 30px;
+}
+
+.inspector-panel-picker-control::after {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  content: "";
+  border-right: 2px solid var(--ink-soft);
+  border-bottom: 2px solid var(--ink-soft);
+  pointer-events: none;
+  transform: translateY(-65%) rotate(45deg);
+}
+
+.inspector-panel-picker-control select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .theme-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+html,
+body {
+  background: #101516;
+}
+
+html:has(.app.theme-light),
+body:has(.app.theme-light) {
+  background: #f4f1e9;
+}
+
+/* ================= MIKU INSPECTOR + QUIET LIGHT RAILS ================= */
+
+.app {
+  --inspector-ink: #062522;
+  --inspector-ink-soft: #0c4f4a;
+  --inspector-ink-faint: #2b746d;
+  --inspector-line: rgba(3, 48, 45, 0.28);
+  --inspector-control: rgba(255, 255, 255, 0.24);
+  --inspector-control-hover: rgba(255, 255, 255, 0.38);
+}
+
+/* The inspector is a single Miku-green dock. Its small cards remain translucent
+   so the column reads as one surface without flattening every control. */
+
+.app .sidebar,
+.app .sidebar-heading,
+.app .sidebar .inspector-panel-picker,
+.app .sidebar .tab-body,
+.app .sidebar .panel,
+.app .sidebar-footnote {
+  color: var(--inspector-ink) !important;
+  background: var(--accent) !important;
+  border-color: var(--inspector-line) !important;
+}
+
+.app .sidebar {
+  border-left-color: transparent !important;
+}
+
+.app .sidebar .sidebar-heading strong,
+.app .sidebar .inspector-panel-picker-label label,
+.app .sidebar .panel h4,
+.app .sidebar .palette-toolbar,
+.app .sidebar .palette-toolbar-label,
+.app .sidebar .palette-columns-control,
+.app .sidebar .palette-status,
+.app .sidebar .alpha-label,
+.app .sidebar .palette-alpha-row output,
+.app .sidebar .hint,
+.app .sidebar .agent-slot-count,
+.app .sidebar .agent-cap-hint,
+.app .sidebar .sidebar-footnote {
+  color: var(--inspector-ink-soft) !important;
+}
+
+.app .sidebar .sidebar-heading strong,
+.app .sidebar .panel h4 {
+  color: var(--inspector-ink) !important;
+}
+
+.app .sidebar .inspector-panel-picker {
+  border-bottom-color: var(--inspector-line) !important;
+}
+
+.app .sidebar .inspector-panel-picker-control {
+  color: var(--inspector-ink) !important;
+  background: var(--inspector-control) !important;
+  border-color: var(--inspector-line) !important;
+}
+
+.app .sidebar .inspector-panel-picker-control:hover {
+  background: var(--inspector-control-hover) !important;
+}
+
+.app .sidebar .inspector-panel-picker-control select {
+  color: var(--inspector-ink) !important;
+}
+
+.app .sidebar .inspector-panel-picker-control::after {
+  border-color: var(--inspector-ink-soft);
+}
+
+.app .sidebar .inspector-panel-picker-control > .pixel-icon,
+.app .sidebar .panel .pixel-icon,
+.app .sidebar .sidebar-footnote .pixel-icon {
+  color: var(--inspector-ink-soft) !important;
+}
+
+.app .sidebar .sprite-row,
+.app .sidebar .room-card,
+.app .sidebar .room-status,
+.app .sidebar .people-list,
+.app .sidebar .callout,
+.app .sidebar .agent-live-card,
+.app .sidebar .pet-card,
+.app .sidebar .pet-option,
+.app .sidebar .new-sprite-form,
+.app .sidebar .io-details,
+.app .sidebar .room-form .field {
+  color: var(--inspector-ink) !important;
+  background: var(--inspector-control) !important;
+  border-color: var(--inspector-line) !important;
+}
+
+.app .sidebar input,
+.app .sidebar select,
+.app .sidebar textarea,
+.app .sidebar .text-btn,
+.app .sidebar .room-refresh,
+.app .sidebar .header-icon-btn {
+  color: var(--inspector-ink) !important;
+  background: var(--inspector-control) !important;
+  border-color: var(--inspector-line) !important;
+}
+
+.app .sidebar input::placeholder,
+.app .sidebar textarea::placeholder {
+  color: var(--inspector-ink-faint) !important;
+}
+
+.app .sidebar .text-btn:hover:not(:disabled),
+.app .sidebar .room-refresh:hover:not(:disabled),
+.app .sidebar .header-icon-btn:hover {
+  color: var(--inspector-ink) !important;
+  background: var(--inspector-control-hover) !important;
+  border-color: var(--inspector-ink-soft) !important;
+}
+
+.app .sidebar .sprite-row.active,
+.app .sidebar .active-room-row.current,
+.app .sidebar .active-room-row:hover,
+.app .sidebar .pet-option:hover,
+.app .sidebar .pet-option.active {
+  color: var(--inspector-ink) !important;
+  background: rgba(255, 255, 255, 0.42) !important;
+  border-color: var(--inspector-ink-soft) !important;
+}
+
+/* A hidden rail still belongs to its dock: tools keep the paper surface and
+   the inspector keeps the Miku surface, including in light mode. */
+
+.app .workspace.toolbar-collapsed > .rail-tab:first-child {
+  color: var(--ink-soft) !important;
+  background: var(--paper) !important;
+  border-color: var(--line) !important;
+}
+
+.app .workspace.sidebar-collapsed > .rail-tab:last-child {
+  color: var(--inspector-ink) !important;
+  background: var(--accent) !important;
+  border-color: var(--inspector-line) !important;
+}
+
+.app.theme-light .workspace.toolbar-collapsed > .rail-tab:first-child {
+  color: var(--ink-soft) !important;
+  background: var(--paper-warm) !important;
+  border-color: var(--line) !important;
+}
+
+/* Transparent pixels need the same calm paper checker both outside and inside
+   the canvas backing store. */
+
+.app.theme-light .stage-canvas-wrap {
+  background-color: #e1ddd3 !important;
+  background-image: repeating-conic-gradient(#eeeae1 0% 25%, #e1ddd3 0% 50%) !important;
+  background-size: 16px 16px !important;
+}
+
+/* Keep document names readable; only the small file icon carries the accent. */
+
+.app .project-tab-button > span {
+  color: var(--ink) !important;
+}
+
+.app .project-tab-button > .pixel-icon {
+  color: var(--accent) !important;
+}
+
+/* ================= CREST RANGE CONTROLS =================
+   A range is still a real input, but the track and thumb have a small RPG
+   crest silhouette so opacity feels like an editor control rather than a
+   browser default. */
+
+.fire-slider {
+  --slider-track: rgba(0, 0, 0, 0.2);
+  --slider-line: rgba(0, 0, 0, 0.34);
+  --slider-fill: var(--accent);
+  --slider-ember: #ff755f;
+  position: relative;
+  display: block;
+  min-width: 76px;
+  height: 24px;
+  flex: 1 1 96px;
+}
+
+.fire-slider::before {
+  position: absolute;
+  top: 7px;
+  right: 1px;
+  left: 1px;
+  height: 10px;
+  content: "";
+  background:
+    repeating-linear-gradient(90deg, transparent 0 13px, rgba(255, 255, 255, 0.16) 13px 14px),
+    var(--slider-track);
+  border: 1px solid var(--slider-line);
+  clip-path: polygon(0 25%, 2% 0, 98% 0, 100% 25%, 100% 75%, 98% 100%, 2% 100%, 0 75%);
+}
+
+.fire-slider-bars {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 2px;
+  left: 2px;
+  display: grid;
+  height: 12px;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  pointer-events: none;
+}
+
+.fire-slider-segment {
+  min-width: 0;
+  background: var(--slider-track);
+  border: 1px solid var(--slider-line);
+  clip-path: polygon(0 0, 100% 0, 100% 78%, 78% 100%, 0 100%);
+}
+
+.fire-slider-segment.filled {
+  background: var(--slider-fill);
+  border-color: var(--slider-fill);
+}
+
+.fire-slider-segment.filled:nth-child(6n) {
+  background: var(--slider-ember);
+  border-color: var(--slider-ember);
+}
+
+.fire-slider::after {
+  position: absolute;
+  z-index: 3;
+  top: 2px;
+  left: clamp(0px, calc(var(--range-progress) - 1px), calc(100% - 3px));
+  width: 3px;
+  height: 20px;
+  content: "";
+  background: var(--slider-ember);
+  box-shadow: 0 0 0 1px var(--slider-line), 0 0 4px rgba(255, 117, 95, 0.55);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 64%, 35% 50%, 0 36%);
+  pointer-events: none;
+}
+
+.fire-slider input[type="range"] {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  width: 100%;
+  height: 24px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.fire-slider input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  border: 0;
+}
+
+.fire-slider input[type="range"]::-webkit-slider-thumb {
+  width: 20px;
+  height: 24px;
+  margin-top: 0;
+  background: transparent;
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.fire-slider input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  border: 0;
+}
+
+.fire-slider input[type="range"]::-moz-range-progress {
+  background: transparent;
+}
+
+.fire-slider input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 24px;
+  background: transparent;
+  border: 0;
+}
+
+.fire-slider:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.layer-opacity-control,
+.palette-alpha-row {
+  align-items: center;
+}
+
+.app .sidebar .fire-slider {
+  --slider-track: rgba(0, 42, 40, 0.22);
+  --slider-line: rgba(0, 42, 40, 0.38);
+  --slider-fill: #0e716a;
+}
+
+/* Subtle zebra bands make stacked animation layers easier to scan without
+   reintroducing loud borders. */
+
+.timeline-scroll > .timeline-row:nth-child(2n):not(.active) {
+  background: color-mix(in srgb, var(--paper) 82%, var(--paper-deep)) !important;
+}
+
+.timeline-scroll > .timeline-row:nth-child(2n + 1):not(.active) {
+  background: var(--paper-warm) !important;
+}
+
+.app.theme-light .timeline-scroll > .timeline-row:nth-child(2n):not(.active) {
+  background: #eeeae1 !important;
+}
+
+.app.theme-light .timeline-scroll > .timeline-row:nth-child(2n + 1):not(.active) {
+  background: #f7f4ed !important;
+}
+
+/* Keep the inspector dock quiet and structural: its Miku-green treatment is
+   reserved for the accent itself, not the whole working column. */
+
+.app .sidebar,
+.app .sidebar-heading,
+.app .sidebar .inspector-panel-picker,
+.app .sidebar .tab-body,
+.app .sidebar .panel,
+.app .sidebar-footnote {
+  color: var(--ink) !important;
+  background: var(--paper) !important;
+  border-color: var(--line) !important;
+}
+
+.app.theme-light .sidebar,
+.app.theme-light .sidebar-heading,
+.app.theme-light .sidebar .inspector-panel-picker,
+.app.theme-light .sidebar .tab-body,
+.app.theme-light .sidebar .panel,
+.app.theme-light .sidebar-footnote {
+  color: var(--ink) !important;
+  background: var(--paper-warm) !important;
+  border-color: var(--line) !important;
+}
+
+.app .sidebar {
+  border-left-color: var(--line) !important;
+}
+
+.app .sidebar .sidebar-heading strong,
+.app .sidebar .inspector-panel-picker-label label,
+.app .sidebar .panel h4,
+.app .sidebar .palette-toolbar,
+.app .sidebar .palette-toolbar-label,
+.app .sidebar .palette-columns-control,
+.app .sidebar .palette-status,
+.app .sidebar .alpha-label,
+.app .sidebar .palette-alpha-row output,
+.app .sidebar .hint,
+.app .sidebar .agent-slot-count,
+.app .sidebar .agent-cap-hint,
+.app .sidebar .sidebar-footnote {
+  color: var(--ink-soft) !important;
+}
+
+.app .sidebar .sidebar-heading strong,
+.app .sidebar .panel h4 {
+  color: var(--ink) !important;
+}
+
+.app .sidebar .inspector-panel-picker-control {
+  color: var(--ink) !important;
+  background: var(--paper-deep) !important;
+  border-color: var(--line) !important;
+}
+
+.app.theme-light .sidebar .inspector-panel-picker-control {
+  background: #fffdf8 !important;
+}
+
+.app .sidebar .inspector-panel-picker-control:hover {
+  background: var(--paper-warm) !important;
+}
+
+.app .sidebar .inspector-panel-picker-control select {
+  color: var(--ink) !important;
+}
+
+.app .sidebar .inspector-panel-picker-control::after {
+  border-color: var(--ink-soft);
+}
+
+.app .sidebar .inspector-panel-picker-control > .pixel-icon,
+.app .sidebar .panel .pixel-icon,
+.app .sidebar .sidebar-footnote .pixel-icon {
+  color: var(--accent) !important;
+}
+
+.app .sidebar .sprite-row,
+.app .sidebar .room-card,
+.app .sidebar .room-status,
+.app .sidebar .people-list,
+.app .sidebar .callout,
+.app .sidebar .agent-live-card,
+.app .sidebar .pet-card,
+.app .sidebar .pet-option,
+.app .sidebar .new-sprite-form,
+.app .sidebar .io-details,
+.app .sidebar .room-form .field {
+  color: var(--ink) !important;
+  background: var(--paper-deep) !important;
+  border-color: var(--line) !important;
+}
+
+.app.theme-light .sidebar .sprite-row,
+.app.theme-light .sidebar .room-card,
+.app.theme-light .sidebar .room-status,
+.app.theme-light .sidebar .people-list,
+.app.theme-light .sidebar .callout,
+.app.theme-light .sidebar .agent-live-card,
+.app.theme-light .sidebar .pet-card,
+.app.theme-light .sidebar .pet-option,
+.app.theme-light .sidebar .new-sprite-form,
+.app.theme-light .sidebar .io-details,
+.app.theme-light .sidebar .room-form .field {
+  background: #fffdf8 !important;
+}
+
+.app .sidebar input,
+.app .sidebar select,
+.app .sidebar textarea,
+.app .sidebar .text-btn,
+.app .sidebar .room-refresh,
+.app .sidebar .header-icon-btn {
+  color: var(--ink) !important;
+  background: var(--paper-deep) !important;
+  border-color: var(--line) !important;
+}
+
+.app.theme-light .sidebar input,
+.app.theme-light .sidebar select,
+.app.theme-light .sidebar textarea,
+.app.theme-light .sidebar .text-btn,
+.app.theme-light .sidebar .room-refresh,
+.app.theme-light .sidebar .header-icon-btn {
+  background: #fffdf8 !important;
+}
+
+.app .sidebar input::placeholder,
+.app .sidebar textarea::placeholder {
+  color: var(--ink-faint) !important;
+}
+
+.app .sidebar .text-btn:hover:not(:disabled),
+.app .sidebar .room-refresh:hover:not(:disabled),
+.app .sidebar .header-icon-btn:hover {
+  color: var(--ink) !important;
+  background: var(--paper-warm) !important;
+  border-color: var(--line-strong) !important;
+}
+
+.app .workspace.sidebar-collapsed > .rail-tab:last-child {
+  color: var(--ink-soft) !important;
+  background: var(--paper) !important;
+  border-color: var(--line) !important;
+}
+
+.app.theme-light .workspace.sidebar-collapsed > .rail-tab:last-child {
+  background: var(--paper-warm) !important;
+}
+
+/* ================= COMFORTABLE STUDIO SCALE =================
+   Keep the editor fullscreen while giving the pixel labels and controls a
+   little more physical room. The pet compensates for this zoom in its
+   viewport coordinates so dragging stays natural. */
+
+:root {
+  --studio-ui-scale: 1.1;
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  zoom: var(--studio-ui-scale);
+}
+
+/* The canvas frame is the visual focus, not a floating card. */
+.app .stage-canvas-wrap {
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16) !important;
+}
+
+.app.theme-light .stage-canvas-wrap {
+  box-shadow: 0 4px 10px rgba(45, 43, 37, 0.1) !important;
+}
+
+/* The footer credit should sit in the column without a separator bar. */
+.app .sidebar-footnote {
+  border-top: 0 !important;
+}
+
+/* ================= COMPANION SPEECH ================= */
+
+.floating-pet-bubble {
+  position: relative;
+  box-sizing: border-box;
+  width: min(168px, calc(100vw - 24px));
+  margin: 0 0 8px;
+  padding: 6px 8px 7px;
+  color: #fff;
+  background: #050505;
+  border: 2px solid var(--line-strong);
+  font-family: var(--font-crt);
+  font-size: 11px;
+  line-height: 1.16;
+  text-align: left;
+}
+
+.floating-pet-bubble::after {
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  width: 16px;
+  height: 9px;
+  content: "";
+  background: #050505;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  transform: translateX(-50%);
+}
+
+.floating-pet.active .floating-pet-bubble {
+  border-color: var(--accent);
+}
+
+.floating-pet.inactive .floating-pet-bubble {
+  color: var(--ink-soft);
+  opacity: 0.9;
+}
+
+.app.theme-light .floating-pet-bubble {
+  color: var(--ink);
+  background: #fffdf8;
+  border-color: var(--line-strong);
+}
+
+.app.theme-light .floating-pet-bubble::after {
+  background: #fffdf8;
+}
+
+/* ================= PALETTE WORKBENCH ================= */
+
+.app .palette-summary,
+.app .palette-library-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 9px 0 7px;
+}
+
+.app .palette-summary > div,
+.app .palette-library-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.app .palette-summary strong,
+.app .palette-library-heading strong {
+  color: var(--ink);
+  font-family: var(--font-readable);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.app .palette-summary span,
+.app .palette-library-heading span {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-family: var(--font-readable);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app .palette-summary .text-btn {
+  flex: 0 0 auto;
+}
+
+.app .palette-empty-state {
+  display: grid;
+  min-height: 74px;
+  place-content: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 12px;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--paper-deep) 76%, var(--accent));
+  border: 1px dashed var(--line-strong);
+  border-radius: 7px;
+  text-align: center;
+}
+
+.app .palette-empty-state strong {
+  color: var(--accent);
+  font-family: var(--font-readable);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+
+.app .palette-empty-state span {
+  color: var(--ink-faint);
+  font-family: var(--font-readable);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.app .palette-library-heading {
+  align-items: end;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.app .palette-save-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.app .palette-save-copy strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-readable);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app .palette-save-copy span {
+  color: var(--ink-faint);
+  font-family: var(--font-readable);
+  font-size: 11px;
+}
+
+.app .sidebar .log-list li {
+  align-items: center;
+  gap: 5px;
+}
+
+/* ================= INSPECTOR PANEL MENU ================= */
+
+.app .inspector-panel-picker-label > span {
+  color: var(--ink-faint);
+  font-family: var(--font-readable);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app .inspector-panel-picker-control {
+  position: relative;
+  display: block;
+  padding: 0;
+  overflow: visible;
+}
+
+.app .inspector-panel-picker-control::after {
+  display: none;
+  content: none;
+}
+
+.app .inspector-panel-picker-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--font-readable);
+  font-size: 15px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.app .inspector-panel-picker-trigger:hover,
+.app .inspector-panel-picker-trigger:focus-visible {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper-warm) 76%, var(--accent));
+}
+
+.app .inspector-panel-picker-trigger > .pixel-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--accent) !important;
+  font-size: 18px;
+}
+
+.app .inspector-panel-picker-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app .inspector-panel-picker-chevron {
+  margin-left: auto;
+  color: var(--accent);
+  font-family: var(--font-crt);
+  font-size: 19px;
+  line-height: 0.7;
+}
+
+.app .inspector-panel-picker-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 3px;
+  padding: 5px;
+  background: var(--paper-deep);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 4px 5px 0 color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.app .inspector-panel-picker-option {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--font-readable);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.app .inspector-panel-picker-option:hover,
+.app .inspector-panel-picker-option:focus-visible,
+.app .inspector-panel-picker-option.active {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper-warm) 72%, var(--accent));
+}
+
+.app .inspector-panel-picker-option > .pixel-icon {
+  width: 17px;
+  height: 17px;
+  color: var(--accent);
+}
+
+.app .inspector-panel-picker-check {
+  margin-left: auto;
+  color: var(--accent);
+  font-family: var(--font-crt);
+  font-size: 16px;
+}
+
+.app.theme-light .inspector-panel-picker-menu {
+  background: #fffdf8;
+  box-shadow: 4px 5px 0 rgba(45, 43, 37, 0.1);
+}
+
+/* The HUD and its scroll region belong to the whole center column. */
+
+.app .stage-header,
+.app .stage-footer,
+.app .stage-canvas-scroll {
+  width: 100%;
+  max-width: none;
+}
+
+.app .stage-header,
+.app .stage-footer {
+  min-width: 0;
+}
+
+.app .stage-footer {
+  flex-wrap: wrap;
+}
+
+.app .stage-hint {
+  min-width: 120px;
+}
+
+/* Make the credit feel intentional at the bottom of the inspector. */
+
+.app .sidebar-footnote {
+  min-height: 38px;
+  gap: 7px;
+  font-family: var(--font-readable);
+  font-size: 14px !important;
+}
+
+.app .sidebar-footnote .pixel-heart {
+  font-size: 17px;
+}
+
+/* Both palette alpha and layer opacity use the same responsive crest control. */
+
+.app .fire-slider {
+  min-width: 92px;
+  touch-action: none;
+}
+
+.app .fire-slider input[type="range"] {
+  touch-action: none;
+}
+
+/* ================= FLAT ROOM INSPECTOR =================
+   Presence is the useful content in this panel. Keep the inspector paper
+   visible and reserve chrome for the controls that can actually be used. */
+
+.app .sidebar .inspector-panel-picker {
+  display: block;
+  padding: 8px 14px 9px !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.app .sidebar .inspector-panel-picker-label {
+  display: none;
+}
+
+.app .sidebar .inspector-panel-picker-control {
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.app .sidebar .inspector-panel-picker-control::after {
+  display: none !important;
+  content: none;
+}
+
+.app .inspector-panel-picker-trigger {
+  min-height: 36px;
+  padding: 6px 0;
+  border-radius: 4px;
+}
+
+.app .inspector-panel-picker-trigger:hover,
+.app .inspector-panel-picker-trigger:focus-visible {
+  background: color-mix(in srgb, var(--paper-deep) 70%, transparent);
+}
+
+.app .inspector-panel-picker-trigger .panel-status-dot {
+  margin-left: auto;
+}
+
+.app .inspector-panel-picker-trigger .inspector-panel-picker-chevron {
+  margin-left: 0;
+}
+
+.app .sidebar .room-panel {
+  gap: 17px;
+  padding: 10px 14px 20px;
+  background: transparent !important;
+}
+
+.app .sidebar .room-panel .room-status,
+.app .sidebar .room-panel .room-form,
+.app .sidebar .room-panel .room-card,
+.app .sidebar .room-panel .people-list,
+.app .sidebar .room-panel .room-form .field {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.app .sidebar .room-panel .room-status {
+  min-height: 22px;
+  padding: 0 !important;
+  color: var(--ink-soft) !important;
+  font-family: var(--font-readable);
+  font-size: 13px;
+}
+
+.app .sidebar .room-panel .room-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50% !important;
+}
+
+.app .sidebar .room-panel .active-rooms {
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+}
+
+.app .sidebar .room-panel .active-rooms-heading h4,
+.app .sidebar .room-panel .room-people h4 {
+  margin: 0;
+  color: var(--ink) !important;
+  font-family: var(--font-readable);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.app .sidebar .room-panel .active-rooms-hint {
+  margin: 4px 0 10px;
+  color: var(--ink-faint) !important;
+  font-family: var(--font-readable);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.app .sidebar .room-panel .room-refresh {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--ink-faint) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+}
+
+.app .sidebar .room-panel .room-refresh:hover:not(:disabled),
+.app .sidebar .room-panel .room-refresh:focus-visible {
+  color: var(--accent) !important;
+  background: color-mix(in srgb, var(--paper-deep) 70%, transparent) !important;
+  border: 0 !important;
+}
+
+.app .sidebar .room-panel .active-room-list {
+  gap: 1px;
+}
+
+.app .sidebar .room-panel .active-room-row {
+  min-height: 42px;
+  padding: 6px 0;
+  color: var(--ink-soft) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+}
+
+.app .sidebar .room-panel .active-room-row:hover,
+.app .sidebar .room-panel .active-room-row.current {
+  color: var(--ink) !important;
+  background: color-mix(in srgb, var(--paper-deep) 76%, transparent) !important;
+  border: 0 !important;
+}
+
+.app .sidebar .room-panel .active-room-row.current .active-room-dot {
+  background: var(--accent);
+}
+
+.app .sidebar .room-panel .room-form {
+  gap: 12px;
+  padding: 0 !important;
+}
+
+.app .sidebar .room-panel .room-form .field {
+  gap: 4px;
+  padding: 0 !important;
+  color: var(--ink-soft) !important;
+}
+
+.app .sidebar .room-panel .room-form .field > span {
+  font-family: var(--font-readable);
+  font-size: 12px;
+}
+
+.app .sidebar .room-panel .room-form input:not([type="checkbox"]) {
+  padding: 7px 0 !important;
+  color: var(--ink) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
+  border-radius: 0 !important;
+}
+
+.app .sidebar .room-panel .room-form input:not([type="checkbox"]):focus {
+  border-bottom-color: var(--accent) !important;
+}
+
+.app .sidebar .room-panel .follow-row {
+  gap: 7px;
+  padding: 0 !important;
+  color: var(--ink-soft) !important;
+}
+
+.app .sidebar .room-panel .room-card {
+  gap: 8px;
+  padding: 0 !important;
+}
+
+.app .sidebar .room-panel .room-card-heading code {
+  padding: 0;
+  color: var(--accent) !important;
+  background: transparent !important;
+  border: 0;
+}
+
+.app .sidebar .room-panel .room-people {
+  gap: 8px;
+}
+
+.app .sidebar .room-panel .people-list {
+  gap: 0;
+  padding: 0 !important;
+}
+
+.app .sidebar .room-panel .person-row {
+  min-height: 40px;
+  padding: 7px 0;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.app .sidebar .room-panel .person-avatar {
+  border: 0 !important;
+  outline: 0 !important;
+  border-radius: 4px;
+}
+
+.app .sidebar .room-panel .room-directory-message,
+.app .sidebar .room-panel .room-server-note,
+.app .sidebar .room-panel .room-error {
+  padding: 0;
+  background: transparent !important;
+  border: 0 !important;
 }

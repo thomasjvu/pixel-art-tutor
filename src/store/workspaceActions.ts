@@ -1,5 +1,6 @@
 import { useStore } from "./projectStore";
 import { useWorkspace, type NewProjectOptions } from "./workspaceStore";
+import { DEFAULT_CANVAS_ZOOM, useEditor } from "./editorStore";
 
 function syncCurrentTab(): void {
   useWorkspace.getState().syncActive(useStore.getState().project);
@@ -9,6 +10,7 @@ export function createBlankProjectTab(options?: NewProjectOptions): void {
   syncCurrentTab();
   const tab = useWorkspace.getState().createBlankTab(options);
   useStore.getState().loadProject(tab.project);
+  useEditor.getState().setZoom(DEFAULT_CANVAS_ZOOM);
 }
 
 export function openProjectTab(id: string): void {
