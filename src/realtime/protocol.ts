@@ -10,6 +10,7 @@ import {
   MAX_PROJECT_NAME_LENGTH,
   MAX_SPRITE_NAME_LENGTH,
   MAX_SPRITES,
+  MAX_TILEMAP_DIMENSION,
   MAX_TOTAL_PIXEL_CELLS,
 } from "../projectLimits";
 
@@ -321,7 +322,7 @@ function isRoomTilePatch(value: unknown): value is RoomTilePatch {
     typeof value.index === "number" &&
     Number.isInteger(value.index) &&
     value.index >= 0 &&
-    value.index < MAX_DIMENSION * MAX_DIMENSION &&
+    value.index < MAX_TILEMAP_DIMENSION * MAX_TILEMAP_DIMENSION &&
     (value.tileId === null ||
       (typeof value.tileId === "string" && value.tileId.length > 0 && value.tileId.length <= MAX_ID_LENGTH))
   );
@@ -420,10 +421,10 @@ function hasProjectShell(project: Project): boolean {
     !isRecord(project.tilemap) ||
     !Number.isInteger(project.tilemap.cols) ||
     project.tilemap.cols < 2 ||
-    project.tilemap.cols > MAX_DIMENSION ||
+    project.tilemap.cols > MAX_TILEMAP_DIMENSION ||
     !Number.isInteger(project.tilemap.rows) ||
     project.tilemap.rows < 2 ||
-    project.tilemap.rows > MAX_DIMENSION ||
+    project.tilemap.rows > MAX_TILEMAP_DIMENSION ||
     !Array.isArray(project.tilemap.cells) ||
     project.tilemap.cells.length !== project.tilemap.cols * project.tilemap.rows
   ) {

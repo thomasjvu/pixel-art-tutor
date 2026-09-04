@@ -23,3 +23,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Private release scratch space. Keep the credential-free helper below, but
+# never commit submission credentials, URLs, recordings, or account notes.
+.private/*
+!.private/
+!.private/submission-preflight.sh

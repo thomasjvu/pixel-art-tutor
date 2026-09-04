@@ -4,7 +4,13 @@ import { Icon } from "./Icon";
 import { SpriteThumb } from "./SpriteThumb";
 import type { Sprite, SpriteKind } from "../types";
 import { downloadText } from "../engine/exportImage";
-import { MAX_PROJECT_JSON_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
+import {
+  DEFAULT_CHARACTER_FRAME_COUNT,
+  MAX_FRAMES_PER_SPRITE,
+  MAX_DIMENSION,
+  MAX_PROJECT_JSON_LENGTH,
+  MAX_SPRITE_NAME_LENGTH,
+} from "../projectLimits";
 import { useUi } from "../store/uiStore";
 
 /** SubmitEvent extensions from the WebMCP Declarative API */
@@ -21,21 +27,25 @@ export function SpritesPanel() {
   const deleteSprite = useStore((s) => s.deleteSprite);
   const renameSprite = useStore((s) => s.renameSprite);
   const resetProject = useStore((s) => s.resetProject);
+  const setNewProjectOpen = useUi((s) => s.setNewProjectOpen);
 
   function onNewSpriteSubmit(e: WebMCPSubmitEvent) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     const n = String(data.get("name") ?? "").trim() || "Untitled";
-    const w = Math.max(1, Math.min(64, Number(data.get("width")) || 64));
-    const h = Math.max(1, Math.min(64, Number(data.get("height")) || 64));
+    const w = Math.max(1, Math.min(MAX_DIMENSION, Number(data.get("width")) || MAX_DIMENSION));
+    const h = Math.max(1, Math.min(MAX_DIMENSION, Number(data.get("height")) || MAX_DIMENSION));
     const k = (String(data.get("kind")) || "character") as SpriteKind;
+    const requestedFrames = Number(data.get("frameCount"));
+    const frameCount = Number.isInteger(requestedFrames) ? requestedFrames : undefined;
     useStore.getState().interruptStroke();
-    const id = addSprite({ name: n, width: w, height: h, kind: k });
+    const id = addSprite({ name: n, width: w, height: h, kind: k, frameCount });
+    const created = id ? useStore.getState().project.sprites.find((sprite) => sprite.id === id) : null;
     if (e.agentInvoked && e.respondWith) {
       e.respondWith(
         Promise.resolve(
           id
-            ? { ok: true, spriteId: id, message: `"${n}" created and now active in the editor.` }
+            ? { ok: true, spriteId: id, frames: created?.frames.length ?? 0, message: `"${n}" created and now active in the editor.` }
             : { ok: false, error: "project capacity reached (sprite, frame, or pixel limit)" },
         ),
       );
@@ -86,11 +96,11 @@ export function SpritesPanel() {
         <div className="panel-row">
           <label className="field">
             <span>Width</span>
-            <input name="width" type="number" min={1} max={64} defaultValue={64} list="common-sizes" toolparamdescription="Canvas width in pixels, typically 16, 32 or 64." />
+            <input name="width" type="number" min={1} max={MAX_DIMENSION} defaultValue={MAX_DIMENSION} list="common-sizes" toolparamdescription="Canvas width in logical pixels, up to 256." />
           </label>
           <label className="field">
             <span>Height</span>
-            <input name="height" type="number" min={1} max={64} defaultValue={64} list="common-sizes" toolparamdescription="Canvas height in pixels, typically 16, 32 or 64." />
+            <input name="height" type="number" min={1} max={MAX_DIMENSION} defaultValue={MAX_DIMENSION} list="common-sizes" toolparamdescription="Canvas height in logical pixels, up to 256." />
           </label>
           <datalist id="common-sizes">
             <option value="8" />
@@ -99,6 +109,8 @@ export function SpritesPanel() {
             <option value="32" />
             <option value="48" />
             <option value="64" />
+            <option value="128" />
+            <option value="256" />
           </datalist>
         </div>
         <div className="panel-row">
@@ -107,12 +119,30 @@ export function SpritesPanel() {
             <select
               name="kind"
               defaultValue="character"
+              onChange={(event) => {
+                const nextKind = event.currentTarget.value as SpriteKind;
+                const frameInput = event.currentTarget.form?.elements.namedItem("frameCount");
+                if (frameInput instanceof HTMLInputElement && (frameInput.value === "4" || frameInput.value === "1")) {
+                  frameInput.value = nextKind === "character" ? String(DEFAULT_CHARACTER_FRAME_COUNT) : "1";
+                }
+              }}
               toolparamdescription="'tile' adds the sprite to the tileset used for map painting."
             >
               <option value="character">character</option>
               <option value="item">item</option>
               <option value="tile">tile</option>
             </select>
+          </label>
+          <label className="field">
+            <span>Frames</span>
+            <input
+              name="frameCount"
+              type="number"
+              min={1}
+              max={MAX_FRAMES_PER_SPRITE}
+              defaultValue={DEFAULT_CHARACTER_FRAME_COUNT}
+              toolparamdescription="Animation frame count. Defaults to 4 for characters; use 1 for a still item or tile."
+            />
           </label>
           <button type="submit" className="primary-btn">
             Create
@@ -161,8 +191,8 @@ export function SpritesPanel() {
           <button className="text-btn danger" onClick={() => resetProject("starter")}>
             Reset demo
           </button>
-          <button className="text-btn danger" onClick={() => resetProject("blank")}>
-            New blank
+          <button className="text-btn" onClick={() => setNewProjectOpen(true)}>
+            New project…
           </button>
         </div>
       </details>

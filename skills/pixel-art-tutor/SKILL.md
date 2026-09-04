@@ -1,9 +1,9 @@
 # Pixel Art Tutor — agent skill
 
 A WebMCP pixel-art studio where humans and AI agents co-edit one canvas in
-real time. Imperative tools (`src/webmcp/registerTools.ts`) + 1
+real time. 43 imperative tools (`src/webmcp/registerTools.ts`) + 1
 declarative form tool (`request_new_sprite` in `SpritesPanel.tsx`).
-Fresh starts open a blank 64×64 canvas; the starter world lives under
+Fresh starts open a blank 256×256 canvas; the starter world lives under
 File > Open starter world.
 
 ## Shared-state rule
@@ -23,15 +23,15 @@ For synchronous co-editing (human sees your cursor + edits live):
 
 ```bash
 npm run room:dev                                             # room server on :1999
-VITE_PARTY_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1
+VITE_PARTYKIT_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1
 ```
 
-Both commands must stay running. Start/restart Vite after setting `VITE_PARTY_HOST` because
+Both commands must stay running. Start/restart Vite after setting `VITE_PARTYKIT_HOST` because
 Vite injects that value at startup. Then create/join a room in the Room panel and share the
 exact `?room=<id>` URL (including the same app origin) with the human.
 The Room panel also refreshes an **Active rooms** directory so collaborators can see live rooms and
 join with one click; it lists metadata only and requires the configured room worker.
-`RoomBridge.tsx` broadcasts your Pixel Bot presence (cursor, progress,
+`RoomBridge.tsx` broadcasts your selected companion's presence (cursor, progress,
 status message) to every peer; `CanvasStage.tsx` renders it. With follow
 mode on (Room panel, default), peers' editors jump to the sprite/frame you
 are working on, so humans watch you draw instead of finding it later.
@@ -47,11 +47,11 @@ the JSON (Sprites panel > Project file > Import) or open a `#p=…` permalink.
 
 Room checklist before editing:
 
-- `room:dev` is running and the Vite process has `VITE_PARTY_HOST` set.
+- `room:dev` is running and the Vite process has `VITE_PARTYKIT_HOST` set.
 - Both participants opened the same `?room=<id>` link.
 - The header says `N IN ROOM`, and Room lists the other participant.
-- The agent has checked **I'm an agent (Pixel Bot)**; the human can check
-  **Follow Pixel Bot's view** to follow active sprite/frame work.
+- The agent has checked **I'm an agent (selected companion)**; the human can check
+  **Follow selected companion's view** to follow active sprite/frame work.
 
 ## Calling the tools (important calling convention)
 
@@ -124,11 +124,17 @@ extension for manual calls.
    pixel-perfect, shading, tiled preview, and dither brush. The timeline is intentionally tall
    enough to keep about two layer rows visible; collapsed toolbar/inspector rails return their
    space to the center canvas.
+   The Agent tab checks for a host-provided Codex pet and labels it **Loaded from Codex** when one
+   arrives through the app's namespaced browser bridge. Without a host payload, choose one of the
+   eight bundled Codex sprite-sheet companions (default: Codex) or **No pet** locally; the selected
+   companion speaks the guided tutorial and supplies the agent's display name in room presence.
 7. Tiles: `add_sprite` with `kind:"tile"`, `ensure_tilemap`, `place_tile` /
    `fill_tiles`, `get_tilemap` to read the map as ASCII.
 8. Fresh starts and guides: `new_canvas` (needs `confirm:true`) resets to a
-   blank 64×64 canvas for everyone in a connected room; in solo mode it only
-   resets the current browser. `start_tutorial` /
+   blank 256×256 canvas with four empty animation frames by default for everyone
+   in a connected room; pass `frameCount` to choose another count. In solo mode
+   it only resets the current browser. The default is a 256×256 logical grid at
+   1px per cell; zoom remains editable. `start_tutorial` /
    `tutorial_goto` drive the shared guided-tour overlay step by step — pair
    each step with a live demo, ending in a first project together.
    `end_tutorial` closes your overlay when done (following humans dismiss
@@ -153,12 +159,13 @@ conversion remains an external pipeline concern.
 
 ## Gotchas
 
-- New character sprites start with **2 frames** (second one empty). After
-  `add_sprite`, check frame fill with `read_sprite` per frame; delete the
-  empty one before `add_frame`, or your animation will blink empty.
+- New character sprites start with **4 frames** (all empty). Pass an explicit
+  `frameCount` when a different animation length is intended; items and tiles
+  default to one frame. After `add_sprite`, check frame fill with `read_sprite`
+  per frame so the agent can make each cel intentional.
 - Pixel data is ASCII rows over a 64-symbol alphabet; first 36 symbols keep
   base-36 compatibility (`src/engine/pixels.ts`).
-- Project JSON limit 4,000,000 chars; share-link hash limit 180,000
+- Project JSON limit 4,000,000 chars; compact 256×256 share-link hash limit 2,200,000
   (`src/projectLimits.ts`).
 - Tool registrations are tied to an `AbortController` — React StrictMode
   remounts re-register; a missing `document.modelContext` means the browser
@@ -166,8 +173,8 @@ conversion remains an external pipeline concern.
 - Room presence is display state, not auth; room links are bearer links.
 - The Active rooms directory is advisory: it lists only rooms with live connections and never
   contains project pixels. It may be briefly stale while a room's activity lease expires.
-  Tick “I'm an agent (Pixel Bot)” in the Room panel so the room always shows
-  your AGENT tag, even while idle (otherwise you look HUMAN between calls).
+  Tick “I'm an agent (your companion)” in the Room panel so the room always shows
+  the selected companion's AGENT tag, even while idle (otherwise you look HUMAN between calls).
 - `SOLO STUDIO` means no live peer can see the current edits. Use the room
   checklist above or export/import the project before reporting success.
   Rate limits: 16 connections/room, 30 edits + 120 presence msgs per 10s

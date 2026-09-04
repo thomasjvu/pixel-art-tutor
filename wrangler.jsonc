@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "pixel-art-tutor-room",
-  "main": "party/server.ts",
+  "main": "partykit/server.ts",
   "compatibility_date": "2026-08-26",
   "durable_objects": {
     "bindings": [

@@ -7,8 +7,8 @@
 > this plan's status row in `plans/README.md` unless a reviewer maintains the
 > index.
 >
-> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- src/realtime/roomClient.ts src/realtime/protocol.ts party/server.ts` and
-> `git diff --stat 78aad52 -- src/realtime/roomClient.ts src/realtime/protocol.ts party/server.ts`.
+> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- src/realtime/roomClient.ts src/realtime/protocol.ts partykit/server.ts` and
+> `git diff --stat 78aad52 -- src/realtime/roomClient.ts src/realtime/protocol.ts partykit/server.ts`.
 > The second command includes the current unstaged prototype. If either command
 > shows changes, compare the Current state excerpts with the live code before
 > proceeding. A mismatch is a STOP condition until the plan is refreshed.
@@ -87,7 +87,7 @@ documented in-memory undo history.
   ```
 - `src/realtime/roomClient.ts:382-410` handles an operation broadcast, including
   the sender's own broadcast, but has no in-flight operation to acknowledge.
-- `party/server.ts:280-283` already treats a repeated `operationId` as an
+- `partykit/server.ts:280-283` already treats a repeated `operationId` as an
   idempotent retry by rebroadcasting the existing history entry. Preserve this
   server behavior; do not create a second operation for a retry.
 - `src/realtime/roomClient.ts:437-439` currently reports any room error as
@@ -114,7 +114,7 @@ documented in-memory undo history.
 
 **Out of scope**:
 
-- `party/server.ts` protocol or persistence changes; its repeated-operation
+- `partykit/server.ts` protocol or persistence changes; its repeated-operation
   handling is the idempotency mechanism this plan consumes.
 - `src/realtime/protocol.ts` message-shape changes.
 - Durable outbox persistence across a full page reload.

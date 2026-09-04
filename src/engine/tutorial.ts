@@ -8,12 +8,12 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "welcome",
     title: "WELCOME TO THE STUDIO",
-    body: "This is a shared canvas: you and Pixel Bot draw on the same sprites at the same time. Everything below takes about two minutes, then we make our first project together.",
+    body: "This is a shared canvas: you and your companion draw on the same sprites at the same time. Everything below takes about two minutes, then we make our first project together.",
   },
   {
     id: "canvas",
     title: "THE CANVAS",
-    body: "The big grid is your sprite. Zoom with the + / − buttons, toggle the pixel grid from the toolbar or View menu. Right-click always erases. Fresh canvases start blank at 64×64.",
+    body: "The big grid is your sprite. Zoom with the + / − buttons, toggle the pixel grid from the toolbar or View menu. Right-click always erases. Fresh canvases start blank at 256×256.",
   },
   {
     id: "tools",
@@ -33,22 +33,22 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "agent",
     title: "PIXEL BOT (AGENT TAB)",
-    body: "The Agent tab lists every WebMCP tool and a live activity feed. Ask your agent to critique, paint, or animate — its cursor appears on your canvas as it works.",
+    body: "The Agent tab lists every WebMCP tool and a live activity feed. Ask your companion to critique, paint, or animate — its cursor appears on your canvas as it works.",
   },
   {
     id: "follow",
     title: "FOLLOW MODE (ROOM TAB)",
-    body: "In a shared room, tick “Follow Pixel Bot's view” and your editor jumps to whatever the agent is drawing, so you watch edits happen instead of finding them later.",
+    body: "In a shared room, tick “Follow your companion's view” and your editor jumps to whatever the agent is drawing, so you watch edits happen instead of finding them later.",
   },
   {
     id: "room",
     title: "ROOMS + SHARING",
-    body: "Create a room, share the link, and everyone sees edits, cursors, and Pixel Bot live. Use the share-link button for a one-click snapshot, or Save JSON for a backup file.",
+    body: "Create a room, share the link, and everyone sees edits, cursors, and your companion live. Use the share-link button for a one-click snapshot, or Save JSON for a backup file.",
   },
   {
     id: "finale",
     title: "FIRST PROJECT — TOGETHER",
-    body: "Tour complete! Pixel Bot starts a fresh canvas, names it (guided-tutorial-01?), draws the first sprite with you watching, and saves it to the project library. You paint beside it — one canvas, two artists.",
+    body: "Tour complete! Your companion starts a fresh canvas, names it (guided-tutorial-01?), draws the first sprite with you watching, and saves it to the project library. You paint beside it — one canvas, two artists.",
   },
 ];
 

@@ -8,6 +8,7 @@ import {
   MAX_PROJECT_NAME_LENGTH,
   MAX_SPRITE_NAME_LENGTH,
   MAX_SPRITES,
+  MAX_TILEMAP_DIMENSION,
   MAX_TOTAL_PIXEL_CELLS,
   projectPixelCells,
 } from "../projectLimits";
@@ -226,11 +227,11 @@ function sanitizeTilemap(raw: unknown, sprites: Sprite[]): TilemapData | null {
     typeof cols !== "number" ||
     !Number.isInteger(cols) ||
     cols < 2 ||
-    cols > MAX_DIMENSION ||
+    cols > MAX_TILEMAP_DIMENSION ||
     typeof rows !== "number" ||
     !Number.isInteger(rows) ||
     rows < 2 ||
-    rows > MAX_DIMENSION ||
+    rows > MAX_TILEMAP_DIMENSION ||
     !Array.isArray(cells) ||
     cells.length !== cols * rows
   ) {
@@ -259,10 +260,11 @@ export function sanitizeProject(raw: unknown): Project | null {
     return null;
   }
 
+  // Keep palette slots stable when untrusted input contains a malformed color.
+  // Filtering an entry would shift every later pixel index to a different color.
   const palette = raw.palette
     .slice(0, MAX_PALETTE_COLORS)
-    .map(sanitizeColor)
-    .filter((color): color is string => color !== null);
+    .map((color) => sanitizeColor(color) ?? "#000000");
   if (palette.length === 0) return null;
 
   const paletteAlpha = Array.from({ length: palette.length }, (_, index) => {
@@ -477,9 +479,9 @@ function isCanonicalTilemap(value: unknown, tileIds: Set<string>): value is Tile
     Number.isInteger(cols) &&
     Number.isInteger(rows) &&
     cols >= 2 &&
-    cols <= MAX_DIMENSION &&
+    cols <= MAX_TILEMAP_DIMENSION &&
     rows >= 2 &&
-    rows <= MAX_DIMENSION &&
+    rows <= MAX_TILEMAP_DIMENSION &&
     cells.length === cols * rows &&
     cells.every(
       (cell) => cell === null || (typeof cell === "string" && cell.length <= MAX_ID_LENGTH && tileIds.has(cell)),

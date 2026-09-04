@@ -3,6 +3,7 @@ import { useStore } from "../store/projectStore";
 import { SpriteThumb } from "./SpriteThumb";
 import { Icon } from "./Icon";
 import { TRANSPARENT } from "../types";
+import { MAX_TILEMAP_DIMENSION } from "../projectLimits";
 
 export function TilemapPanel() {
   const project = useStore((s) => s.project);
@@ -158,7 +159,7 @@ export function TilemapPanel() {
           <input
             type="number"
             min={2}
-            max={64}
+            max={MAX_TILEMAP_DIMENSION}
             value={tm.cols}
             onChange={(e) => ensureTilemap(Number(e.target.value) || tm.cols, tm.rows)}
           />
@@ -168,7 +169,7 @@ export function TilemapPanel() {
           <input
             type="number"
             min={2}
-            max={64}
+            max={MAX_TILEMAP_DIMENSION}
             value={tm.rows}
             onChange={(e) => ensureTilemap(tm.cols, Number(e.target.value) || tm.rows)}
           />

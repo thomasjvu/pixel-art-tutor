@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Icon } from "./Icon";
 import { useEditor } from "../store/editorStore";
 import { useStore } from "../store/projectStore";
@@ -44,6 +44,11 @@ export function TimelinePanel() {
   const setPlaybackMode = useEditor((s) => s.setPlaybackMode);
   const playbackTagId = useEditor((s) => s.playbackTagId);
   const setPlaybackTagId = useEditor((s) => s.setPlaybackTagId);
+  const timelineOpen = useEditor((s) => s.timelineOpen);
+  const timelineHeight = useEditor((s) => s.timelineHeight);
+  const setTimelineOpen = useEditor((s) => s.setTimelineOpen);
+  const setTimelineHeight = useEditor((s) => s.setTimelineHeight);
+  const resizeStart = useRef<{ clientY: number; height: number } | null>(null);
 
   const layers = sprite ? spriteLayers(sprite) : [];
   const activeLayer = layers.find((layer) => layer.id === activeLayerId) ?? layers[0];
@@ -105,15 +110,64 @@ export function TimelinePanel() {
     if (id) setPlaybackTagId(id);
   }
 
+  function startTimelineResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (!timelineOpen || event.button !== 0) return;
+    event.preventDefault();
+    resizeStart.current = { clientY: event.clientY, height: timelineHeight };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveTimelineResize(event: React.PointerEvent<HTMLDivElement>) {
+    const start = resizeStart.current;
+    if (!start) return;
+    setTimelineHeight(start.height + start.clientY - event.clientY);
+  }
+
+  function stopTimelineResize(event: React.PointerEvent<HTMLDivElement>) {
+    resizeStart.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function resizeTimelineWithKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!timelineOpen) return;
+    const amount = event.shiftKey ? 48 : 16;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setTimelineHeight(timelineHeight + amount);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setTimelineHeight(timelineHeight - amount);
+    }
+  }
+
   return (
-    <section className="timeline-panel" aria-label="Animation timeline">
+    <section className={timelineOpen ? "timeline-panel" : "timeline-panel timeline-collapsed"} aria-label="Animation timeline">
+      <div
+        className="timeline-resize-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-valuemin={112}
+        aria-valuemax={560}
+        aria-valuenow={timelineHeight}
+        aria-label="Resize timeline; use the arrow keys to adjust height"
+        tabIndex={0}
+        title={timelineOpen ? "Drag to resize timeline" : "Expand timeline first"}
+        onPointerDown={startTimelineResize}
+        onPointerMove={moveTimelineResize}
+        onPointerUp={stopTimelineResize}
+        onPointerCancel={stopTimelineResize}
+        onKeyDown={resizeTimelineWithKeyboard}
+      />
       <div className="timeline-header">
         <div className="timeline-heading">
           <h2>
             Timeline <span>{layers.length} layers · {frameColumns} cels</span>
           </h2>
         </div>
-        <div className="timeline-controls">
+        <div className="timeline-header-actions">
+          <div className="timeline-controls">
           <button className="round-btn" onClick={previousFrame} title="Previous frame">
             <Icon icon="mingcute:back-2" />
           </button>
@@ -180,13 +234,26 @@ export function TimelinePanel() {
           >
             <span>R/B</span>
           </button>
-          <button className="timeline-tool add-frame-btn" onClick={() => addFrame(sprite.id, activeFrameIndex, activeLayer.id)} title="Duplicate the selected cel">
-            <Icon icon="mingcute:add" />
-            <span>Cel</span>
+            <button className="timeline-tool add-frame-btn" onClick={() => addFrame(sprite.id, activeFrameIndex, activeLayer.id)} title="Duplicate the selected cel">
+              <Icon icon="mingcute:add" />
+              <span>Cel</span>
+            </button>
+          </div>
+          <button
+            className="timeline-collapse-btn"
+            type="button"
+            onClick={() => setTimelineOpen(!timelineOpen)}
+            aria-expanded={timelineOpen}
+            aria-controls="timeline-content"
+            aria-label={timelineOpen ? "Collapse timeline" : "Expand timeline"}
+            title={timelineOpen ? "Collapse timeline" : "Expand timeline"}
+          >
+            <span className="timeline-collapse-glyph" aria-hidden="true">{timelineOpen ? "⌄" : "⌃"}</span>
           </button>
         </div>
       </div>
 
+      <div id="timeline-content" className="timeline-content">
       <div className="timeline-tag-bar">
         <span className="timeline-tag-label">TAGS</span>
         {tags.map((tag) => (
@@ -307,6 +374,7 @@ export function TimelinePanel() {
         <span><Icon icon="mingcute:mouse" /> Click a cel to edit</span>
         <span><kbd>←</kbd><kbd>→</kbd> step frames</span>
         <span className="timeline-meta">{sprite.name} · {playbackMode.replace("_", " ")}{playbackTagId ? " · tagged" : " · all frames"}</span>
+      </div>
       </div>
     </section>
   );

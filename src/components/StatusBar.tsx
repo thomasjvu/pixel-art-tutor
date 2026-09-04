@@ -58,21 +58,6 @@ export function StatusBar({ onOpenAgent }: { onOpenAgent: () => void }) {
   return (
     <footer className="statusbar">
       <div className="footer-identity">
-        <div className="footer-brand-mark" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 8 8" shapeRendering="crispEdges">
-            <rect width="8" height="8" fill="#000" />
-            <rect x="1" y="1" width="2" height="2" fill="#ff2e2e" />
-            <rect x="5" y="1" width="2" height="2" fill="#ffee00" />
-            <rect x="3" y="3" width="2" height="2" fill="#fff" />
-            <rect x="1" y="5" width="2" height="2" fill="#fff" />
-            <rect x="5" y="5" width="2" height="2" fill="#ff2e2e" />
-          </svg>
-        </div>
-        <div className="footer-brand-copy">
-          <strong>PIXEL PATCH</strong>
-          <span>tiny art studio</span>
-        </div>
-        <span className="footer-divider" aria-hidden="true" />
         <div className="footer-project">
           <input
             className="footer-project-title"

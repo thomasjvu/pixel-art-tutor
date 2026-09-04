@@ -28,8 +28,8 @@ The relevant limits and flow are:
 - src/realtime/protocol.ts:398-415 defines a snapshot operation containing baseProject and project, and projectChangeToRoomPatch returns null for structural changes.
 - src/realtime/roomClient.ts:579-610 creates an in-flight snapshot operation with baseProject and project, serializes the full message, and rejects it when the string is larger than MAX_PROJECT_JSON_LENGTH.
 - src/realtime/roomClient.ts:617-625 sends the operation only after the size check, but the in-flight record has already been installed.
-- party/server.ts:247-250 applies the same raw message-length cap.
-- party/server.ts uses mergeProjectChanges for a stale snapshot, which is why baseProject is currently present on the wire.
+- partykit/server.ts:247-250 applies the same raw message-length cap.
+- partykit/server.ts uses mergeProjectChanges for a stale snapshot, which is why baseProject is currently present on the wire.
 
 The current protocol is version 2. Existing room state is persisted independently of this message shape. A mixed client/worker rollout must be treated as a compatibility risk.
 
@@ -39,9 +39,9 @@ Run:
 
 | Check | Command | Expected interpretation |
 | --- | --- | --- |
-| Committed drift | git diff --stat b36fad5..HEAD -- src/projectLimits.ts src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts src/store/uiStore.ts src/components/RoomPanel.tsx | Empty or explainable branch commits |
-| Working-tree drift | git diff --stat b36fad5 -- src/projectLimits.ts src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts src/store/uiStore.ts src/components/RoomPanel.tsx | Expected to show active implementation changes |
-| Size path | rg -n "MAX_PROJECT_JSON_LENGTH|baseProject|mode.*snapshot|projectChangeToRoomPatch|sendOperation|sendError" src/projectLimits.ts src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Confirm the duplicate-payload path |
+| Committed drift | git diff --stat b36fad5..HEAD -- src/projectLimits.ts src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts src/store/uiStore.ts src/components/RoomPanel.tsx | Empty or explainable branch commits |
+| Working-tree drift | git diff --stat b36fad5 -- src/projectLimits.ts src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts src/store/uiStore.ts src/components/RoomPanel.tsx | Expected to show active implementation changes |
+| Size path | rg -n "MAX_PROJECT_JSON_LENGTH|baseProject|mode.*snapshot|projectChangeToRoomPatch|sendOperation|sendError" src/projectLimits.ts src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Confirm the duplicate-payload path |
 
 If the deployed worker cannot be updated atomically with the client, stop before changing ROOM_PROTOCOL_VERSION and report the rollout dependency.
 
@@ -55,7 +55,7 @@ Run from the repository root:
 | Lint | npm run lint | Exit 0; the known CanvasStage warning may remain |
 | Production build | npm run build | Exit 0 |
 | Patch hygiene | git diff --check | No output |
-| Payload audit | rg -n "baseProject|snapshot_request|ROOM_PROTOCOL_VERSION|roomSyncBlocked|too large" src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts src/store/uiStore.ts src/components/RoomPanel.tsx | Shows the new shape, migration, and terminal-size handling |
+| Payload audit | rg -n "baseProject|snapshot_request|ROOM_PROTOCOL_VERSION|roomSyncBlocked|too large" src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts src/store/uiStore.ts src/components/RoomPanel.tsx | Shows the new shape, migration, and terminal-size handling |
 
 ## Scope
 
@@ -63,7 +63,7 @@ Only edit:
 
 - src/realtime/protocol.ts
 - src/realtime/roomClient.ts
-- party/server.ts
+- partykit/server.ts
 - src/store/uiStore.ts
 - src/components/RoomPanel.tsx
 
@@ -101,7 +101,7 @@ Expected output: exit 0.
 
 ### 2. Make the server reject stale snapshots without needing a base payload
 
-In the snapshot branch of party/server.ts:
+In the snapshot branch of partykit/server.ts:
 
 - validate the project as a complete project;
 - require baseSeq to equal the current room sequence for the new protocol;
@@ -196,4 +196,3 @@ Stop and report if:
 ## Maintenance notes
 
 Keep the wire-size invariant visible near the protocol type: a structural operation must not regain a second full project payload. If compression or chunking is later added, it should be a separate protocol design with explicit limits, cleanup of partial transfers, and deployment compatibility.
-

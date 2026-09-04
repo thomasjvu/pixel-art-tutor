@@ -1716,7 +1716,7 @@ kbd {
   color: var(--ink);
 }
 
-.new-sprite-form:tool-form-active {
+.new-sprite-form.tool-form-active {
   outline: 2px solid var(--mint);
   outline-offset: 2px;
 }
@@ -4621,7 +4621,23 @@ body {
 
 .menu-bar {
   min-height: 41px;
+  justify-content: flex-start;
+  gap: 9px;
   border-bottom-color: #1a1a1a;
+}
+
+.menu-app-mark {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  background: #000;
+  border: 1px solid #303030;
+}
+
+.menu-app-mark svg {
+  display: block;
 }
 
 .menu-popover > summary {
@@ -4833,52 +4849,6 @@ body {
 
 .footer-identity {
   flex: 0 1 auto;
-  gap: 9px;
-}
-
-.footer-brand-mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  place-items: center;
-  background: #000;
-  border: 1px solid #363636;
-}
-
-.footer-brand-mark svg {
-  display: block;
-}
-
-.footer-brand-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-  white-space: nowrap;
-}
-
-.footer-brand-copy strong {
-  color: #fff;
-  font-family: var(--font-pixel);
-  font-size: 8px;
-  letter-spacing: 0.04em;
-}
-
-.footer-brand-copy span {
-  color: var(--yellow);
-  font-family: var(--font-pixel);
-  font-size: 6px;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.footer-divider {
-  width: 1px;
-  height: 25px;
-  flex: 0 0 auto;
-  margin: 0 2px;
-  background: #222;
 }
 
 .footer-project {
@@ -5001,8 +4971,6 @@ body {
     padding-inline: 9px;
   }
 
-  .footer-brand-copy,
-  .footer-divider,
   .footer-project-subtitle,
   .footer-readouts .status-coordinate,
   .footer-readouts .status-size {
@@ -5467,4 +5435,975 @@ body {
   .share-network-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ================= CODEX PETS =================
+   A pet is a small, optional voice for the guided experience. The artwork
+   stays pixel-sharp while the companion card remains quiet enough to keep
+   the Agent panel scannable. */
+
+.pet-card {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  background: #080808;
+  border: 1px solid #292929;
+}
+
+.pet-card-heading,
+.pet-card-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.pet-card-heading {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pet-card-identity {
+  gap: 8px;
+}
+
+.pet-card-identity > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.pet-card-identity strong {
+  overflow: hidden;
+  color: #fff;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-card-identity span:not(.pet-avatar) {
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.pet-card-description {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.pet-change-button {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  font-size: 14px;
+}
+
+.pet-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  color: var(--pet-accent, var(--yellow));
+  background: #090909;
+  border: 1px solid var(--pet-accent, var(--yellow));
+  image-rendering: pixelated;
+}
+
+.pet-avatar svg,
+.pet-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.pet-avatar-empty {
+  width: 32px;
+  height: 32px;
+  color: var(--ink-faint);
+  border-color: #292929;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+}
+
+.pet-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.pet-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  color: var(--ink-soft);
+  background: #0d0d0d;
+  border: 1px solid #242424;
+  text-align: left;
+  font-size: 15px;
+}
+
+.pet-option:hover,
+.pet-option.active {
+  color: #fff;
+  background: #151515;
+  border-color: var(--yellow);
+}
+
+.pet-option .pet-avatar {
+  width: 26px;
+  height: 26px;
+}
+
+.agent-live-avatar .pet-avatar {
+  width: 26px;
+  height: 26px;
+  border-color: transparent;
+}
+
+.person-avatar .pet-avatar {
+  width: 20px;
+  height: 20px;
+  border-color: transparent;
+}
+
+.tutorial-speaker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #202020;
+}
+
+.tutorial-speaker > div {
+  display: grid;
+  gap: 2px;
+}
+
+.tutorial-speaker strong {
+  color: var(--yellow);
+  font-family: var(--font-pixel);
+  font-size: 9px;
+}
+
+.tutorial-speaker span {
+  color: var(--ink-faint);
+  font-size: 15px;
+}
+
+/* ================= COLUMN DOCK =================
+   The inspector is a true right-hand dock. Menu, document tabs, editor and
+   footer occupy the left + middle tracks, while the inspector owns the full
+   height of the third track. */
+
+@media (min-width: 821px) {
+  .app {
+    --toolbar-track: 96px;
+    --sidebar-track: 340px;
+    display: grid;
+    grid-template-columns: var(--toolbar-track) minmax(0, 1fr) var(--sidebar-track);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+
+  .app.toolbar-collapsed {
+    --toolbar-track: 26px;
+  }
+
+  .app.sidebar-collapsed {
+    --sidebar-track: 26px;
+  }
+
+  .workspace {
+    display: contents;
+  }
+
+  .menu-bar {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .project-tabs {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .toolbar,
+  .workspace.toolbar-collapsed > .rail-tab:first-child {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  .editor-column {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .sidebar,
+  .workspace.sidebar-collapsed > .rail-tab:last-child {
+    grid-column: 3;
+    grid-row: 1 / -1;
+  }
+
+  .workspace.toolbar-collapsed > .rail-tab:first-child,
+  .workspace.sidebar-collapsed > .rail-tab:last-child {
+    width: auto;
+  }
+
+  .statusbar {
+    grid-column: 2;
+    grid-row: 4;
+  }
+}
+
+@media (max-width: 820px) {
+  .app {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .workspace {
+    display: grid;
+    flex: 1;
+  }
+}
+
+/* ================= LIGHT MODE =================
+   A paper-and-ink alternative for long drawing sessions. The same red/yellow
+   accents remain, while the working surface and chrome invert calmly. */
+
+.app.theme-light {
+  --paper: #f4f1e9;
+  --paper-warm: #fbfaf5;
+  --paper-deep: #e9e4d8;
+  --ink: #20252b;
+  --ink-soft: #59616a;
+  --ink-faint: #7d858d;
+  --line: #d8d3c8;
+  --line-strong: #b8b1a4;
+  --canvas: #e7e3da;
+  --shadow: rgba(45, 43, 37, 0.16);
+  --danger-soft: #f9e5e2;
+  --red-soft: #f7e2df;
+  color-scheme: light;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.app.theme-light,
+.app.theme-light .workspace,
+.app.theme-light .editor-column,
+.app.theme-light .stage,
+.app.theme-light .sidebar,
+.app.theme-light .tab-body,
+.app.theme-light .panel,
+.app.theme-light .toolbar,
+.app.theme-light .timeline-panel,
+.app.theme-light .app-header,
+.app.theme-light .menu-bar,
+.app.theme-light .project-tabs,
+.app.theme-light .statusbar {
+  background: var(--paper-warm);
+  color: var(--ink);
+}
+
+.app.theme-light .app-header,
+.app.theme-light .project-tabs,
+.app.theme-light .toolbar,
+.app.theme-light .sidebar,
+.app.theme-light .timeline-panel,
+.app.theme-light .statusbar,
+.app.theme-light .menu-bar {
+  border-color: var(--line);
+}
+
+.app.theme-light .menu-panel,
+.app.theme-light .callout,
+.app.theme-light .tool-list.scrollable,
+.app.theme-light .agent-live-card,
+.app.theme-light .room-card,
+.app.theme-light .room-form .field,
+.app.theme-light .people-list,
+.app.theme-light .pet-card,
+.app.theme-light .pet-option,
+.app.theme-light .new-sprite-form,
+.app.theme-light .io-details,
+.app.theme-light .new-project-dialog,
+.app.theme-light .preferences-dialog,
+.app.theme-light .share-dialog {
+  background: #fffdf8;
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.app.theme-light .menu-popover > summary,
+.app.theme-light .menu-item,
+.app.theme-light .tool-toggle,
+.app.theme-light .tool-btn,
+.app.theme-light .timeline-tool,
+.app.theme-light .text-btn,
+.app.theme-light .zoom-button,
+.app.theme-light .header-icon-btn,
+.app.theme-light .footer-help,
+.app.theme-light .room-refresh,
+.app.theme-light .project-tab-button,
+.app.theme-light .tab {
+  color: var(--ink-soft);
+}
+
+.app.theme-light .menu-popover > summary:hover,
+.app.theme-light .menu-popover[open] > summary,
+.app.theme-light .menu-item:hover:not(:disabled),
+.app.theme-light .tool-btn:hover:not(:disabled),
+.app.theme-light .tool-toggle:hover:not(:disabled),
+.app.theme-light .text-btn:hover:not(:disabled),
+.app.theme-light .zoom-button:hover:not(:disabled),
+.app.theme-light .header-icon-btn:hover,
+.app.theme-light .footer-help:hover,
+.app.theme-light .room-refresh:hover:not(:disabled),
+.app.theme-light .project-tab:hover .project-tab-button,
+.app.theme-light .project-tab.active .project-tab-button,
+.app.theme-light .tab:hover {
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+
+.app.theme-light .primary-btn,
+.app.theme-light .tool-btn.active,
+.app.theme-light .tool-toggle.active,
+.app.theme-light .tab.active {
+  color: #241f09;
+  background: var(--yellow);
+  border-color: #c8b900;
+}
+
+.app.theme-light .menu-popover[open] > summary,
+.app.theme-light .menu-item:hover:not(:disabled) {
+  background: #ebe5c5;
+}
+
+.app.theme-light .menu-panel,
+.app.theme-light .stage-canvas-wrap {
+  box-shadow: 0 8px 20px var(--shadow) !important;
+}
+
+.app.theme-light input,
+.app.theme-light select,
+.app.theme-light textarea,
+.app.theme-light .keymap-input,
+.app.theme-light .share-link-row input,
+.app.theme-light .share-caption-field textarea,
+.app.theme-light .sprite-name {
+  color: var(--ink);
+  background: #fffdf8;
+  border-color: var(--line-strong);
+}
+
+.app.theme-light .stage-canvas-wrap {
+  background: #e5e1d7;
+  background-image: repeating-conic-gradient(#eeeae1 0% 25%, #e1ddd3 0% 50%);
+  border-color: var(--line-strong);
+}
+
+.app.theme-light .stage-canvas {
+  outline-color: #c8c1b5;
+}
+
+.app.theme-light .sprite-row,
+.app.theme-light .timeline-cel,
+.app.theme-light .active-room-row,
+.app.theme-light .share-network,
+.app.theme-light .keymap-input {
+  background: #f5f2eb;
+  border-color: var(--line);
+}
+
+.app.theme-light .sprite-row.active,
+.app.theme-light .active-room-row.current,
+.app.theme-light .active-room-row:hover,
+.app.theme-light .pet-option:hover,
+.app.theme-light .pet-option.active {
+  background: #ebe5c5;
+  border-color: #c8b900;
+}
+
+.app.theme-light .timeline-cel.active {
+  background: #f6e8e4;
+  border-color: var(--red);
+}
+
+.app.theme-light .timeline-tag-bar,
+.app.theme-light .timeline-layer-controls,
+.app.theme-light .timeline-row.active {
+  background: #f1eee6;
+  border-color: var(--line);
+}
+
+.app.theme-light .timeline-cel-link,
+.app.theme-light .pet-avatar,
+.app.theme-light .footer-help,
+.app.theme-light .header-icon-btn {
+  background: #fffdf8;
+}
+
+.app.theme-light .tool-list code,
+.app.theme-light .project-title,
+.app.theme-light .footer-project-title,
+.app.theme-light .stage-header strong,
+.app.theme-light .timeline-header strong,
+.app.theme-light .timeline-title,
+.app.theme-light .panel h4,
+.app.theme-light .sidebar-heading strong,
+.app.theme-light .dialog-heading h2,
+.app.theme-light .preferences-section-heading h3,
+.app.theme-light .tutorial-title,
+.app.theme-light .pet-card-identity strong {
+  color: var(--ink);
+}
+
+.app.theme-light .tutorial-veil,
+.app.theme-light .dialog-veil {
+  background: rgba(51, 48, 41, 0.28);
+}
+
+.app.theme-light .tutorial-box {
+  color: var(--ink);
+  background: #fffdf8;
+  border-color: var(--ink);
+  outline-color: #fffdf8;
+  box-shadow: 0 12px 30px var(--shadow);
+}
+
+.app.theme-light .tutorial-speaker,
+.app.theme-light .dialog-heading,
+.app.theme-light .dialog-footer {
+  border-color: var(--line);
+}
+
+/* Keep the Undertale silhouette, but take the sting out of every chrome edge. */
+.app .menu-panel,
+.app .menu-item,
+.app input,
+.app select,
+.app textarea,
+.app button,
+.app .room-card,
+.app .room-status,
+.app .people-list,
+.app .callout,
+.app .agent-live-card,
+.app .pet-card,
+.app .pet-option,
+.app .new-sprite-form,
+.app .io-details,
+.app .stage-canvas-wrap,
+.app .preferences-dialog,
+.app .share-dialog,
+.app .new-project-dialog {
+  border-radius: 4px !important;
+}
+
+.app .project-tab-button,
+.app .tab,
+.app .timeline-cel,
+.app .active-room-row,
+.app .sprite-row {
+  border-radius: 3px !important;
+}
+
+.app .status-light,
+.app .mcp-chip .dot,
+.app .room-status-dot,
+.app .active-room-dot,
+.app .person-state {
+  border-radius: 50% !important;
+}
+
+.app .color-wheel {
+  border-radius: 50% !important;
+}
+
+/* The menu labels stay readable, but the dropdown no longer dominates the UI. */
+.app .menu-item {
+  font-size: 16px;
+}
+
+@media (min-width: 821px) {
+  .menu-bar,
+  .project-tabs,
+  .statusbar {
+    grid-column: 2;
+  }
+
+  .toolbar,
+  .workspace.toolbar-collapsed > .rail-tab:first-child {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  .sidebar,
+  .workspace.sidebar-collapsed > .rail-tab:last-child {
+    grid-column: 3;
+    grid-row: 1 / -1;
+  }
+}
+
+/* ================= CODEX PET SHEETS ================= */
+
+.pet-avatar {
+  position: relative;
+}
+
+.pet-avatar-sheet img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 800%;
+  max-width: none;
+  height: 900%;
+  object-fit: fill;
+}
+
+/* ================= NEW PROJECT ================= */
+
+.new-project-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 18px;
+  color: var(--ink);
+  background: #050505;
+  border: 1px solid #555;
+  outline: 1px solid #161616;
+}
+
+.new-project-form {
+  display: grid;
+  gap: 13px;
+}
+
+.new-project-name {
+  display: grid;
+  gap: 5px;
+  color: var(--ink-soft);
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.new-project-name input {
+  width: 100%;
+  color: #fff;
+  background: #0b0b0b;
+  border: 1px solid #303030;
+  font-family: var(--font-crt);
+  font-size: 21px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.new-project-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #202020;
+}
+
+.new-project-section-heading h3 {
+  margin: 0;
+  color: #fff;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+}
+
+.new-project-section-heading span {
+  color: var(--ink-faint);
+  font-size: 15px;
+}
+
+.new-project-size-row,
+.new-project-options-row {
+  display: grid;
+  align-items: end;
+  gap: 10px;
+}
+
+.new-project-size-row {
+  grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+}
+
+.new-project-options-row {
+  grid-template-columns: minmax(0, 1fr) 90px;
+}
+
+.new-project-size-row .field,
+.new-project-options-row .field {
+  display: grid;
+  gap: 5px;
+  color: var(--ink-soft);
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.new-project-size-row input,
+.new-project-options-row input,
+.new-project-options-row select {
+  width: 100%;
+}
+
+.new-project-times {
+  align-self: center;
+  padding-top: 16px;
+  color: var(--ink-faint);
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  text-align: center;
+}
+
+.new-project-presets {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.size-preset {
+  min-height: 31px;
+  padding: 4px 3px;
+  color: var(--ink-soft);
+  background: #0b0b0b;
+  border: 1px solid #292929;
+  font-family: var(--font-crt);
+  font-size: 17px;
+}
+
+.size-preset:hover,
+.size-preset.active {
+  color: #000;
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.new-project-memory-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.new-project-memory-note .pixel-icon {
+  color: var(--yellow);
+}
+
+@media (max-width: 520px) {
+  .new-project-options-row {
+    grid-template-columns: minmax(0, 1fr) 78px;
+  }
+
+  .new-project-presets {
+    gap: 4px;
+  }
+}
+
+/* Complete the light palette across the legacy editor chrome. The canvas keeps
+   its pixel-art checkerboard; menus, rails, timeline, and footer share one
+   quiet paper surface so light mode feels intentional rather than inverted in
+   only the center column. */
+.app.theme-light .workspace,
+.app.theme-light .editor-column,
+.app.theme-light .stage,
+.app.theme-light .toolbar,
+.app.theme-light .sidebar,
+.app.theme-light .sidebar-heading,
+.app.theme-light .tabs,
+.app.theme-light .tab-body,
+.app.theme-light .panel,
+.app.theme-light .timeline-panel,
+.app.theme-light .timeline-header,
+.app.theme-light .timeline-footer,
+.app.theme-light .statusbar,
+.app.theme-light .project-tabs,
+.app.theme-light .menu-bar {
+  color: var(--ink);
+  background: var(--paper-warm);
+}
+
+.app.theme-light .toolbar,
+.app.theme-light .sidebar,
+.app.theme-light .timeline-panel,
+.app.theme-light .statusbar,
+.app.theme-light .app-header,
+.app.theme-light .project-tabs,
+.app.theme-light .menu-bar,
+.app.theme-light .sidebar-heading,
+.app.theme-light .tabs,
+.app.theme-light .timeline-header,
+.app.theme-light .timeline-footer {
+  border-color: var(--line);
+}
+
+.app.theme-light .tool-btn,
+.app.theme-light .tool-toggle,
+.app.theme-light .zoom-button,
+.app.theme-light .hud-btn,
+.app.theme-light .round-btn,
+.app.theme-light .timeline-tool,
+.app.theme-light .fps-control,
+.app.theme-light .stage-size,
+.app.theme-light .stage-zoom-control,
+.app.theme-light .zoom-step,
+.app.theme-light .header-icon-btn,
+.app.theme-light .layer-lock,
+.app.theme-light .layer-visibility,
+.app.theme-light .project-tab-button,
+.app.theme-light .timeline-select,
+.app.theme-light .palette-columns-control select,
+.app.theme-light .layer-blend-select {
+  color: var(--ink-soft);
+  background: #fffdf8;
+  border-color: var(--line);
+  box-shadow: none !important;
+}
+
+.app.theme-light .tool-btn:hover:not(:disabled),
+.app.theme-light .tool-toggle:hover:not(:disabled),
+.app.theme-light .zoom-button:hover:not(:disabled),
+.app.theme-light .hud-btn:hover:not(:disabled),
+.app.theme-light .timeline-tool:hover:not(:disabled),
+.app.theme-light .header-icon-btn:hover,
+.app.theme-light .project-tab:hover .project-tab-button,
+.app.theme-light .project-tab.active .project-tab-button,
+.app.theme-light .layer-lock:hover,
+.app.theme-light .layer-visibility:hover {
+  color: var(--ink);
+  background: var(--paper-deep);
+  border-color: var(--line-strong);
+}
+
+.app.theme-light .tool-btn.active,
+.app.theme-light .tool-toggle.active,
+.app.theme-light .hud-btn.active,
+.app.theme-light .tab.active,
+.app.theme-light .timeline-tool.active {
+  color: #4b4300;
+  background: #ebe5c5;
+  border-color: #c8b900;
+  box-shadow: none !important;
+}
+
+.app.theme-light .round-btn.play,
+.app.theme-light .round-btn.play.active {
+  color: #fff;
+  background: var(--red);
+  border-color: #c54a4a;
+}
+
+.app.theme-light .timeline-tag-bar,
+.app.theme-light .timeline-layer-controls,
+.app.theme-light .timeline-row,
+.app.theme-light .timeline-row.active,
+.app.theme-light .timeline-scroll {
+  color: var(--ink-soft);
+  background: #f1eee6;
+  border-color: var(--line);
+}
+
+.app.theme-light .timeline-cel,
+.app.theme-light .timeline-add-cell,
+.app.theme-light .frame-tag,
+.app.theme-light .layer-icon {
+  color: var(--ink-soft);
+  background: #f5f2eb;
+  border-color: var(--line);
+}
+
+.app.theme-light .timeline-cel.active,
+.app.theme-light .frame-tag.active {
+  color: var(--ink);
+  background: #f6e8e4;
+  border-color: var(--red);
+}
+
+.app.theme-light .timeline-header strong,
+.app.theme-light .timeline-title,
+.app.theme-light .timeline-heading h2,
+.app.theme-light .timeline-lane-label,
+.app.theme-light .ruler-tick,
+.app.theme-light .layer-name-button,
+.app.theme-light .layer-row-actions button,
+.app.theme-light .stage-header strong,
+.app.theme-light .sidebar-heading strong,
+.app.theme-light .panel h4,
+.app.theme-light .toolbar-label,
+.app.theme-light .color-index,
+.app.theme-light .zoom-control,
+.app.theme-light .zoom-label,
+.app.theme-light .palette-toolbar-label {
+  color: var(--ink);
+}
+
+.app.theme-light .toolbar-label,
+.app.theme-light .color-index,
+.app.theme-light .zoom-control,
+.app.theme-light .zoom-label,
+.app.theme-light .palette-toolbar-label,
+.app.theme-light .panel h4,
+.app.theme-light .sidebar-heading strong {
+  color: #776b00;
+}
+
+.app.theme-light .menu-app-mark,
+.app.theme-light .footer-help {
+  color: var(--ink-soft);
+  background: #fffdf8;
+  border-color: var(--line);
+}
+
+.app.theme-light .menu-app-mark {
+  background: var(--ink);
+}
+
+.app.theme-light .footer-project-title,
+.app.theme-light .footer-project-subtitle,
+.app.theme-light .footer-readouts,
+.app.theme-light .footer-connections {
+  color: var(--ink);
+}
+
+.app.theme-light .statusbar .footer-hint,
+.app.theme-light .statusbar .footer-save-state,
+.app.theme-light .statusbar .footer-room-status,
+.app.theme-light .statusbar .footer-project-subtitle {
+  color: var(--ink-faint);
+}
+
+/* Timeline dock controls: the canvas keeps the space the artist gives it,
+   while this strip stays reachable, resizable, and remembered per browser. */
+.editor-column {
+  grid-template-rows: minmax(0, 1fr) var(--timeline-height, 330px);
+}
+
+.timeline-panel {
+  position: relative;
+}
+
+.timeline-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.timeline-resize-handle {
+  position: absolute;
+  z-index: 3;
+  top: -6px;
+  right: 0;
+  left: 0;
+  height: 12px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.timeline-resize-handle::after {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 42px;
+  height: 2px;
+  content: "";
+  background: var(--line-strong);
+  border-radius: 2px;
+  opacity: 0.72;
+  transform: translateX(-50%);
+}
+
+.timeline-resize-handle:hover::after,
+.timeline-resize-handle:focus-visible::after {
+  background: var(--yellow);
+  opacity: 1;
+}
+
+.timeline-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.timeline-controls {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.timeline-collapse-btn {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.timeline-collapse-btn:hover,
+.timeline-collapse-btn:focus-visible {
+  color: var(--ink);
+  background: var(--paper-deep);
+  border-color: var(--line-strong);
+}
+
+.timeline-collapse-glyph {
+  display: block;
+  transform: translateY(-1px);
+}
+
+.timeline-panel.timeline-collapsed {
+  min-height: 42px;
+}
+
+.timeline-panel.timeline-collapsed .timeline-header {
+  min-height: 42px;
+  border-bottom: 0;
+}
+
+.timeline-panel.timeline-collapsed .timeline-controls,
+.timeline-panel.timeline-collapsed .timeline-content,
+.timeline-panel.timeline-collapsed .timeline-resize-handle {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .editor-column {
+    grid-template-rows: minmax(500px, 1fr) var(--timeline-height, 370px);
+  }
+
+  .timeline-heading h2 span {
+    display: none;
+  }
+}
+
+.app.theme-light .timeline-collapse-btn {
+  color: var(--ink-soft);
+  background: #fffdf8;
+  border-color: var(--line);
 }

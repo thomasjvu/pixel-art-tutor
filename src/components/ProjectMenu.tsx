@@ -17,8 +17,7 @@ import {
   unityTextureMeta,
 } from "../engine/exportImage";
 import { buildGamePackManifest, gamePackSpriteFiles } from "../engine/exportManifest";
-import { MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
-import { createBlankProjectTab } from "../store/workspaceActions";
+import { MAX_DIMENSION, MAX_PROJECT_JSON_LENGTH } from "../projectLimits";
 import { formatShortcut, usePreferences } from "../store/preferencesStore";
 import { spriteLayers } from "../types";
 
@@ -39,6 +38,9 @@ export function ProjectMenu() {
   const roomCanUndo = useUi((s) => s.roomCanUndo);
   const roomCanRedo = useUi((s) => s.roomCanRedo);
   const setPreferencesOpen = useUi((s) => s.setPreferencesOpen);
+  const setNewProjectOpen = useUi((s) => s.setNewProjectOpen);
+  const theme = useUi((s) => s.theme);
+  const setTheme = useUi((s) => s.setTheme);
   const setShareOpen = useUi((s) => s.setShareOpen);
   const resetProject = useStore((s) => s.resetProject);
   const showGrid = useEditor((s) => s.showGrid);
@@ -218,7 +220,7 @@ export function ProjectMenu() {
       const image = new Image();
       image.onload = () => {
         try {
-          const scale = Math.min(1, 64 / image.naturalWidth, 64 / image.naturalHeight);
+          const scale = Math.min(1, MAX_DIMENSION / image.naturalWidth, MAX_DIMENSION / image.naturalHeight);
           const targetWidth = width ?? Math.max(1, Math.round(image.naturalWidth * scale));
           const targetHeight = height ?? Math.max(1, Math.round(image.naturalHeight * scale));
           const canvas = document.createElement("canvas");
@@ -279,6 +281,16 @@ export function ProjectMenu() {
 
   return (
     <nav className="menu-bar" aria-label="Main menu">
+      <div className="menu-app-mark" role="img" aria-label="Pixel Patch">
+        <svg width="22" height="22" viewBox="0 0 8 8" shapeRendering="crispEdges" aria-hidden="true">
+          <rect width="8" height="8" fill="#000" />
+          <rect x="1" y="1" width="2" height="2" fill="#ff2e2e" />
+          <rect x="5" y="1" width="2" height="2" fill="#ffee00" />
+          <rect x="3" y="3" width="2" height="2" fill="#fff" />
+          <rect x="1" y="5" width="2" height="2" fill="#fff" />
+          <rect x="5" y="5" width="2" height="2" fill="#ff2e2e" />
+        </svg>
+      </div>
       <div className="menu-items">
         <details
           className="menu-popover"
@@ -305,12 +317,12 @@ export function ProjectMenu() {
             <button
               className="menu-item"
               onClick={(event) => {
-                createBlankProjectTab();
+                setNewProjectOpen(true);
                 closeMenu(event.currentTarget);
               }}
             >
               <Icon icon="mingcute:file-new" />
-              <span>New blank project</span>
+              <span>New project…</span>
               <kbd>⌘N</kbd>
             </button>
             <div className="menu-divider" />
@@ -424,6 +436,19 @@ export function ProjectMenu() {
               <span>Onion skin</span>
               <kbd>{formatShortcut(keymap.toggleOnion)}</kbd>
               <span className="menu-check">{onion ? "✓" : ""}</span>
+            </button>
+            <div className="menu-divider" />
+            <button
+              className="menu-item"
+              onClick={(event) => {
+                setTheme(theme === "dark" ? "light" : "dark");
+                closeMenu(event.currentTarget);
+              }}
+              aria-pressed={theme === "light"}
+            >
+              <Icon icon={theme === "dark" ? "mingcute:sun" : "mingcute:moon"} />
+              <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+              <span className="menu-check">{theme === "light" ? "✓" : ""}</span>
             </button>
           </div>
         </details>

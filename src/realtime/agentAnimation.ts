@@ -48,7 +48,7 @@ export function beginAgentAction(options: AgentActionOptions): string {
   const id = actionId();
   useUi.getState().beginAgentAction({
     actionId: id,
-    name: options.name ?? "Pixel Bot",
+    name: options.name ?? useUi.getState().selectedPet?.name ?? "Studio Guide",
     tool: options.tool,
     status: options.status ?? defaultStatus(options.tool),
     spriteId: options.spriteId,

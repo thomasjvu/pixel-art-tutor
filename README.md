@@ -35,8 +35,8 @@ This is genuine human-agent collaboration: shared state, shared tools, one canva
   or horizontal sheets, and download ready-to-drop Godot `.tres` or Unity `.meta` integration files
   alongside the sheet.
 - **Live rooms**: open the Room panel to create a shareable room. People see each other's pixel
-  cursors, and Pixel Bot's animated drawing cursor follows WebMCP actions in real time.
-  Tick “Follow Pixel Bot's view” and your editor jumps to whatever the agent is drawing.
+  cursors, and the selected companion's animated drawing cursor follows WebMCP actions in real time.
+  Tick “Follow your companion's view” and your editor jumps to whatever the agent is drawing.
 - Share links (`#p=…` permalinks) let anyone open a co-created project with one click.
 
 ## The WebMCP implementation
@@ -52,7 +52,7 @@ await document.modelContext.registerTool({
 });
 ```
 
-### Tool catalog (30 tools)
+### Tool catalog (43 imperative tools)
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ await document.modelContext.registerTool({
 | `get_tilemap` | read-only | Map grid as ASCII + tile legend |
 | `ensure_tilemap` | write | Create/resize the tilemap (clamped 2–64) |
 | `export_project` | read-only | Full project JSON |
-| `new_canvas` | write | Fresh blank 64×64 canvas (with confirmation) |
+| `new_canvas` | write | Fresh blank 256×256 logical canvas with 4 empty frames by default (with confirmation) |
 | `rename_project` | write | Rename the project |
 | `save_project` | write | Save named project to the library |
 | `open_project` | write | Open a saved project (with confirmation) |
@@ -79,15 +79,45 @@ await document.modelContext.registerTool({
 | `transform_sprite` | write | flip_h / flip_v / rotate_90 / shift / outline |
 | `replace_color` | write | Global palette remap |
 | `add_palette_color` | write | Extend shared palette |
+| `set_palette_alpha` | write | Set one palette entry's alpha |
+| `move_palette_color` | write | Reorder a palette entry while preserving artwork |
 | `set_active_sprite` | write | Point the human's editor at a sprite |
 | `add_frame` | write | Duplicate frame for animation |
 | `delete_frame` | write | Delete an animation frame (with confirmation) |
+| `link_frame` | write | Link a cel to another frame's edit group |
+| `unlink_frame` | write | Make a linked cel independent |
+| `add_layer` | write | Add a layer to the active sprite |
+| `duplicate_layer` | write | Duplicate a layer and its cels |
+| `delete_layer` | write | Delete a layer |
+| `move_layer` | write | Reorder a layer |
+| `set_layer_properties` | write | Set layer name, visibility, lock, opacity, or blend mode |
+| `set_animation_preview` | write | Set playback mode, FPS, tag, and play state |
+| `set_canvas_options` | write | Set zoom and canvas drawing/view modes |
+| `add_frame_tag` | write | Tag an inclusive animation range |
+| `delete_frame_tag` | write | Delete an animation tag |
 | `rename_sprite` | write | Rename an existing sprite |
-| `add_sprite` | write | New character/item/tile |
+| `add_sprite` | write | New character/item/tile; characters default to 4 frames |
 | `place_tile` | write | Paint one map cell |
 | `fill_tiles` | write | Paint a map region |
 
 Plus one **declarative API** tool: `<form toolname="request_new_sprite">` in the Sprites tab.
+
+## Codex pet companions
+
+The app treats a pet as the friendly voice for the guided tour and agent activity. It includes the
+actual eight-pet Codex sprite-sheet set used by the local Codex interface under
+`public/codex-pets/`, defaults to **Codex**, and lets people choose another bundled pet from the
+Agent tab. The selection is stored per browser profile; choosing **No pet** keeps the guide neutral.
+Set `VITE_CODEX_PET` to a bundled id when a build should start with a different pet.
+
+The official Codex pets documentation currently describes pet selection in the ChatGPT desktop app
+and Codex CLI, not a public browser API. Custom pets created in the desktop app are local rather
+than automatically synced to an arbitrary web app. Pixel Art Tutor therefore exposes a conservative
+adapter for hosts that choose to provide a pet: inject `window.__CODEX_PET__`, dispatch a `codex:pet`
+or `pixel-art-tutor:codex-pet` event, or answer the `pixel-art-tutor:request-codex-pet` postMessage.
+The payload only needs a `name`; optional `id`, `description`, `accent`, `variant`, and `imageUrl`
+customize the companion. A host-provided payload is marked **Loaded from Codex**; otherwise the
+bundled sheets are honestly labeled **Built-in Codex pet**.
 
 Design notes:
 
@@ -98,20 +128,37 @@ Design notes:
 - Read tools return compact ASCII grids + legends instead of raw arrays, keeping agent token usage low.
 - Tools return `{ ok: false, error }` objects rather than throwing, so agents can self-correct.
 - Registrations are tied to an `AbortController`; React unmount cleanly unregisters every tool.
+- New character sprites and blank canvases use four animation frames unless an explicit
+  `frameCount` is supplied. Items and tiles remain one frame by default.
+- The default canvas is a real 256×256 logical pixel grid shown at 1px per cell; zoom remains editable.
 
 ## Running it
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000
+./start.sh        # editor + local room worker, http://127.0.0.1:3000
+# ./start.sh --solo  # editor only, no room synchronization
 ```
+
+`start.sh` owns both local processes and stops them together with Ctrl-C. Use
+`VITE_PARTYKIT_HOST` to point the editor at a deployed PartyKit room worker
+instead of the local one. Existing setups using `VITE_PARTY_HOST` remain
+supported as a legacy alias.
 
 The app is fully functional standalone. To give an agent access:
 
 - **ChatGPT**: open the deployed URL in ChatGPT's in-app browser (WebMCP supported out of the box).
+  If the host provides a Codex pet payload, the Agent tab and guided tour adopt it automatically;
+  otherwise choose a local companion there.
 - **Chrome**: enable `chrome://flags/#enable-webmcp-testing`, relaunch, open the app.
 - Optionally install the [Model Context Tool Inspector](https://chromewebstore.google.com/detail/model-context-tool-inspec/gbpdfapgefenggkahomfgkhfehlcenpd)
   extension to call tools by hand.
+
+For a judge-facing smoke test, call `get_project_state` first, then `read_sprite`,
+then one safe tool such as `set_canvas_options`. The runtime tool call takes a JSON
+string: `document.modelContext.executeTool(tool, JSON.stringify(input))`. The demo
+does not require a login; a production submission must still provide its exact live
+URL and room test instructions in Devpost.
 
 ### Shared rooms
 
@@ -120,14 +167,14 @@ Durable Object room server in separate terminals:
 
 ```bash
 npm run room:dev                                             # http://127.0.0.1:1999
-VITE_PARTY_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1
+VITE_PARTYKIT_HOST=http://127.0.0.1:1999 npm run dev -- --host 127.0.0.1
 ```
 
 Open the Vite URL, choose **Room**, create a room, and share its URL. The Room panel also shows an
 **Active rooms** list for one-click joining of rooms that currently have collaborators. The server stores the latest
 project snapshot and recent edit history, broadcasts presence over WebSockets, merges non-conflicting
 pixel edits, and only allows a collaborator to undo their latest room operation. Deploy the room
-worker with `npm run room:deploy`, then set `VITE_PARTY_HOST` to its HTTPS host for production.
+worker with `npm run room:deploy`, then set `VITE_PARTYKIT_HOST` to its HTTPS host for production.
 
 Shared rooms are prototype bearer-link rooms: anyone who has a room URL can see and edit that room.
 Display names and colors are presence labels, not verified identity, and there is no authentication or

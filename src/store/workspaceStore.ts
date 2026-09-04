@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { blankProject } from "../engine/seed";
-import type { Project } from "../types";
+import { MAX_PROJECT_NAME_LENGTH } from "../projectLimits";
+import type { Project, SpriteKind } from "../types";
 import { createUniqueId } from "./projectIds";
 
 export interface ProjectTab {
@@ -9,12 +10,20 @@ export interface ProjectTab {
   project: Project;
 }
 
+export interface NewProjectOptions {
+  name?: string;
+  width?: number;
+  height?: number;
+  frameCount?: number;
+  kind?: SpriteKind;
+}
+
 interface WorkspaceState {
   tabs: ProjectTab[];
   activeTabId: string | null;
   initialize(project: Project): void;
   syncActive(project: Project): void;
-  createBlankTab(): ProjectTab;
+  createBlankTab(options?: NewProjectOptions): ProjectTab;
   getTab(id: string): ProjectTab | null;
   activateTab(id: string): void;
   closeTab(id: string): ProjectTab | null;
@@ -54,6 +63,11 @@ function untitledName(tabs: ProjectTab[]): string {
   return `Untitled ${suffix}`;
 }
 
+function projectName(name: string | undefined, tabs: ProjectTab[]): string {
+  const clean = name?.trim().slice(0, MAX_PROJECT_NAME_LENGTH);
+  return clean || untitledName(tabs);
+}
+
 function newTabId(tabs: ProjectTab[]): string {
   return createUniqueId("project-tab", new Set(tabs.map((tab) => tab.id)));
 }
@@ -87,10 +101,15 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => ({
     });
   },
 
-  createBlankTab() {
-    const project = blankProject();
+  createBlankTab(options = {}) {
+    const project = blankProject({
+      width: options.width,
+      height: options.height,
+      frameCount: options.frameCount,
+      kind: options.kind,
+    });
     const { tabs } = get();
-    const name = untitledName(tabs);
+    const name = projectName(options.name, tabs);
     project.name = name;
     const tab: ProjectTab = { id: newTabId(tabs), name, project };
     set({ tabs: [...tabs, tab], activeTabId: tab.id });

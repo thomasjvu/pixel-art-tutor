@@ -50,7 +50,7 @@ export function ShareDialog() {
 
   const shareUrl = useMemo(() => {
     if (!open) return null;
-    const hash = projectHashFromJson(JSON.stringify(project, null, 2));
+    const hash = projectHashFromJson(JSON.stringify(project));
     return hash ? `${location.origin}${location.pathname}${hash}` : null;
   }, [open, project]);
 

@@ -3,13 +3,18 @@ import type { Project } from "./types";
 export const MAX_PALETTE_COLORS = 64;
 export const MAX_SPRITES = 128;
 export const MAX_FRAMES_PER_SPRITE = 32;
+export const DEFAULT_CHARACTER_FRAME_COUNT = 4;
 export const MAX_LAYERS_PER_SPRITE = 32;
-export const MAX_DIMENSION = 64;
+/** Maximum width/height for a sprite or canvas in logical pixels. */
+export const MAX_DIMENSION = 256;
+/** Tilemaps retain their compact 64×64 map limit independently of sprites. */
+export const MAX_TILEMAP_DIMENSION = 64;
 export const MAX_PROJECT_NAME_LENGTH = 128;
 export const MAX_SPRITE_NAME_LENGTH = 128;
 export const MAX_ID_LENGTH = 128;
 export const MAX_PROJECT_JSON_LENGTH = 4_000_000;
-export const MAX_SHARE_HASH_LENGTH = 180_000;
+/** Compact 256×256 projects need a larger but still bounded URL snapshot. */
+export const MAX_SHARE_HASH_LENGTH = 2_200_000;
 export const MAX_TOTAL_PIXEL_CELLS = 1_000_000;
 
 export function projectPixelCells(project: Pick<Project, "sprites">): number {

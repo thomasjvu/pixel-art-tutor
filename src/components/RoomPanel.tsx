@@ -4,6 +4,8 @@ import { useStore } from "../store/projectStore";
 import { useUi } from "../store/uiStore";
 import { downloadText, spriteFileStem } from "../engine/exportImage";
 import { Icon } from "./Icon";
+import { PetAvatar } from "./PetAvatar";
+import { DEFAULT_CODEX_PET } from "../pets/codexPets";
 
 function statusLabel(status: ReturnType<typeof useUi.getState>["roomStatus"]): string {
   switch (status) {
@@ -37,12 +39,15 @@ export function RoomPanel() {
   const setFollowAgent = useUi((state) => state.setFollowAgent);
   const actAsAgent = useUi((state) => state.actAsAgent);
   const setActAsAgent = useUi((state) => state.setActAsAgent);
+  const selectedPet = useUi((state) => state.selectedPet);
   const displayName = useUi((state) => state.roomDisplayName);
   const [roomDraft, setRoomDraft] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const roomInput = roomDraft ?? roomId ?? "";
   const nameInput = nameDraft ?? (displayName || roomClient.displayName);
+  const companionName = selectedPet?.name ?? "Studio Guide";
+  const companionPet = selectedPet ?? DEFAULT_CODEX_PET;
 
   useEffect(() => {
     void roomClient.refreshRooms();
@@ -175,13 +180,13 @@ export function RoomPanel() {
             placeholder="tiny-world"
           />
         </label>
-        <label className="field follow-row" title="Show this window as an agent (Pixel Bot) to everyone in the room, even while idle.">
+        <label className="field follow-row" title={`Show this window as ${companionName} to everyone in the room, even while idle.`}>
           <input
             type="checkbox"
             checked={actAsAgent}
             onChange={(event) => setActAsAgent(event.target.checked)}
           />
-          <span>I'm an agent (Pixel Bot)</span>
+          <span>I'm an agent ({companionName})</span>
         </label>
         <div className="panel-row room-actions">
           <button className="primary-btn" onClick={join}>
@@ -206,7 +211,7 @@ export function RoomPanel() {
               checked={followAgent}
               onChange={(event) => setFollowAgent(event.target.checked)}
             />
-            <span>Follow Pixel Bot</span>
+            <span>Follow {companionName}</span>
           </label>
           <button className="text-btn danger" onClick={() => roomClient.joinRoom(null)}>Leave room</button>
         </div>
@@ -216,9 +221,19 @@ export function RoomPanel() {
         <h4>People here</h4>
         <div className="people-list">
           <div className="person-row self">
-            <span className="person-avatar" style={{ background: "#4daa91" }}><Icon icon="mingcute:group" /></span>
-            <span className="person-name">{nameInput.trim() || "You"}</span>
-            <span className="person-state">you</span>
+            <span className="person-avatar" style={{ background: actAsAgent ? companionPet.accent : "#4daa91" }}>
+              {actAsAgent ? <PetAvatar pet={companionPet} size={20} /> : <Icon icon="mingcute:group" />}
+            </span>
+            <span className="person-meta">
+              <span className="person-name">
+                {actAsAgent ? companionName : nameInput.trim() || "You"}
+                <span className={`kind-badge kind-${actAsAgent ? "agent" : "human"}`}>
+                  {actAsAgent ? "AGENT" : "HUMAN"}
+                </span>
+              </span>
+              <span className="person-detail">{actAsAgent ? "companion ready" : "browsing"}</span>
+            </span>
+            <span className="person-state" style={{ background: actAsAgent ? companionPet.accent : "#4daa91" }} />
           </div>
           {peers.map((peer) => (
             <div className="person-row" key={peer.id} title={`${peer.name} · ${peer.kind} · ${peer.status} · ${peer.tool}: ${peer.message}`}>

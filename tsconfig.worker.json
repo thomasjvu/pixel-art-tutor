@@ -15,5 +15,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["party", "src/realtime/protocol.ts", "src/types.ts"]
+  "include": ["partykit", "src/realtime/protocol.ts", "src/types.ts"]
 }

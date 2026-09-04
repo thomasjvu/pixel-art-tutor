@@ -42,6 +42,11 @@ interface StoredRoomState {
   history: StoredOperation[];
 }
 
+interface CompressedRoomState {
+  encoding: "gzip-json-v1";
+  data: unknown;
+}
+
 interface ConnectionState {
   clientId: string;
   name: string;
@@ -208,6 +213,36 @@ function isStoredOperation(value: unknown): value is StoredOperation {
   );
 }
 
+function isStoredRoomState(value: unknown): value is StoredRoomState {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<StoredRoomState>;
+  return (
+    candidate.schemaVersion === 1 &&
+    Number.isInteger(candidate.seq) &&
+    isProject(candidate.project) &&
+    Array.isArray(candidate.history)
+  );
+}
+
+function compressedRoomState(value: unknown): Uint8Array | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<CompressedRoomState>;
+  if (candidate.encoding !== "gzip-json-v1") return null;
+  const data = candidate.data;
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  return null;
+}
+
+async function decodeRoomState(value: unknown): Promise<unknown> {
+  const compressed = compressedRoomState(value);
+  if (!compressed) return value;
+  const body = new Response(compressed).body;
+  if (!body) return null;
+  const stream = body.pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text());
+}
+
 export class PixelRoom extends Server<RoomEnv> {
   static options = { hibernate: true };
 
@@ -215,13 +250,13 @@ export class PixelRoom extends Server<RoomEnv> {
   private operationTail: Promise<void> = Promise.resolve();
 
   async onStart(): Promise<void> {
-    const stored = await this.ctx.storage.get<StoredRoomState>(STORAGE_KEY);
-    if (
-      stored?.schemaVersion === 1 &&
-      Number.isInteger(stored.seq) &&
-      isProject(stored.project) &&
-      Array.isArray(stored.history)
-    ) {
+    let stored: unknown;
+    try {
+      stored = await decodeRoomState(await this.ctx.storage.get<unknown>(STORAGE_KEY));
+    } catch {
+      stored = null;
+    }
+    if (isStoredRoomState(stored)) {
       this.roomState = {
         schemaVersion: 1,
         seq: stored.seq,
@@ -726,8 +761,16 @@ export class PixelRoom extends Server<RoomEnv> {
     );
   }
 
-  private persist(): Promise<void> {
-    return this.roomState ? this.ctx.storage.put(STORAGE_KEY, this.roomState) : Promise.resolve();
+  private async persist(): Promise<void> {
+    if (!this.roomState) return;
+    const body = new Response(JSON.stringify(this.roomState)).body;
+    if (!body) throw new Error("Could not encode room state.");
+    const stream = body.pipeThrough(new CompressionStream("gzip"));
+    const data = new Uint8Array(await new Response(stream).arrayBuffer());
+    await this.ctx.storage.put(STORAGE_KEY, {
+      encoding: "gzip-json-v1",
+      data,
+    } satisfies CompressedRoomState);
   }
 }
 
@@ -832,12 +875,20 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
       if (request.method !== "GET") return new Response("Method not allowed", { status: 405, headers });
       const directory = env.RoomDirectory.get(env.RoomDirectory.idFromName(ROOM_DIRECTORY_NAME));
-      const response = await directory.fetch("https://pixel-room-directory/rooms");
-      headers.set("Content-Type", "application/json; charset=utf-8");
-      return new Response(await response.text(), {
-        status: response.status,
-        headers,
-      });
+      try {
+        const response = await directory.fetch("https://pixel-room-directory/rooms");
+        headers.set("Content-Type", "application/json; charset=utf-8");
+        return new Response(await response.text(), {
+          status: response.status,
+          headers,
+        });
+      } catch {
+        headers.set("Content-Type", "application/json; charset=utf-8");
+        return new Response(JSON.stringify({ error: "Room directory is temporarily unavailable." }), {
+          status: 503,
+          headers,
+        });
+      }
     }
     const cors = allowedOrigin
       ? {

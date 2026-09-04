@@ -6,8 +6,8 @@
 > not improvise. Modify only the files in Scope. Update this plan's status row in
 > `plans/README.md` when complete unless a reviewer maintains the index.
 >
-> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- src/realtime/protocol.ts src/store/projectStore.ts party/server.ts` and
-> `git diff --stat 78aad52 -- src/realtime/protocol.ts src/store/projectStore.ts party/server.ts`.
+> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- src/realtime/protocol.ts src/store/projectStore.ts partykit/server.ts` and
+> `git diff --stat 78aad52 -- src/realtime/protocol.ts src/store/projectStore.ts partykit/server.ts`.
 > The second command includes unstaged changes. If the Current state excerpts do
 > not match the live code, stop and report before editing.
 

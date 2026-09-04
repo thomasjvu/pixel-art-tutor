@@ -23,7 +23,7 @@ Room errors need enough scope to distinguish the failed request from a room-wide
 The relevant behavior is split across three files:
 
 - src/realtime/protocol.ts owns the room message types and message validation.
-- party/server.ts applies operations and sends errors.
+- partykit/server.ts applies operations and sends errors.
 - src/realtime/roomClient.ts owns the optimistic in-flight operation, coalesced pending change, and canonical snapshot reconciliation.
 
 The current error type at src/realtime/protocol.ts:164-170 is effectively:
@@ -36,7 +36,7 @@ The current error type at src/realtime/protocol.ts:164-170 is effectively:
       seq?: number;
     }
 
-The server's persistence path at party/server.ts:495-510 restores the previous room state when persist fails and calls sendErrorToAll. The broadcast helper at party/server.ts:550-565 sends the canonical project and sequence to every connection. This is the problematic fan-out.
+The server's persistence path at partykit/server.ts:495-510 restores the previous room state when persist fails and calls sendErrorToAll. The broadcast helper at partykit/server.ts:550-565 sends the canonical project and sequence to every connection. This is the problematic fan-out.
 
 The client path at src/realtime/roomClient.ts:540-555 currently treats a valid error snapshot as a local reset: it clears inFlightOperation and history identifiers, applies the canonical project, and keeps only pendingChange. There is no operation identifier or sender scope in the message used by that decision.
 
@@ -48,9 +48,9 @@ Run these before editing:
 
 | Check | Command | Expected interpretation |
 | --- | --- | --- |
-| Committed drift | git diff --stat b36fad5..HEAD -- src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Empty or explainable branch commits |
-| Working-tree drift | git diff --stat b36fad5 -- src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Expected to show the active implementation changes |
-| Relevant symbols | rg -n "RoomErrorMessage|commitOperation|sendErrorToAll|onRoomError|inFlightOperation" src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Confirm the locations above still describe the code |
+| Committed drift | git diff --stat b36fad5..HEAD -- src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Empty or explainable branch commits |
+| Working-tree drift | git diff --stat b36fad5 -- src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Expected to show the active implementation changes |
+| Relevant symbols | rg -n "RoomErrorMessage|commitOperation|sendErrorToAll|onRoomError|inFlightOperation" src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Confirm the locations above still describe the code |
 
 If the live error flow already has correlation and operation-preserving reconciliation, do not duplicate it; instead verify the six scenarios in the Done criteria and update this plan only if the implementation is genuinely complete.
 
@@ -64,7 +64,7 @@ Run from the repository root:
 | Lint | npm run lint | Exit 0; the known CanvasStage dependency warning may remain |
 | Production build | npm run build | Exit 0 |
 | Patch hygiene | git diff --check | No output |
-| Review the resulting protocol paths | rg -n "scope|operationId|sendErrorToAll|restoreOptimisticEdits|inFlightOperation = null" src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Every clear/reset site is intentional and scoped |
+| Review the resulting protocol paths | rg -n "scope|operationId|sendErrorToAll|restoreOptimisticEdits|inFlightOperation = null" src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Every clear/reset site is intentional and scoped |
 
 ## Scope
 
@@ -72,7 +72,7 @@ Only edit:
 
 - src/realtime/protocol.ts
 - src/realtime/roomClient.ts
-- party/server.ts
+- partykit/server.ts
 
 Do not change project persistence, authentication, UI copy unrelated to room errors, the room operation model, or the intentional queue clearing performed when leaving a room. Do not add a durable offline queue. Automated tests are explicitly deferred by the maintainer; record future test targets in the Test plan section rather than adding test files in this change.
 
@@ -183,4 +183,3 @@ Stop and report if:
 ## Maintenance notes
 
 Keep request-scoped errors and room-wide notices distinct as new room features are added. Any future error that includes a canonical snapshot must state whether it supersedes one operation or requires all clients to rebase. Do not regress the explicit stop/join queue-clearing behavior.
-

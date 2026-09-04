@@ -6,8 +6,8 @@
 > not improvise. Modify only the files in Scope. Update this plan's status row in
 > `plans/README.md` when complete unless a reviewer maintains the index.
 >
-> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts` and
-> `git diff --stat 78aad52 -- src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts`.
+> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts` and
+> `git diff --stat 78aad52 -- src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts`.
 > The second command includes unstaged changes. If the Current state excerpts do
 > not match the live code, stop and report before editing.
 
@@ -56,11 +56,11 @@ for high-frequency cell edits becomes compact.
 - `src/realtime/roomClient.ts:453-468` always serializes the full project pair.
   Plan 014 will add an in-memory outbox and stable operation IDs; this plan must
   preserve that retry behavior for both snapshot and patch payloads.
-- `party/server.ts:265-305` validates full projects, calls
+- `partykit/server.ts:265-305` validates full projects, calls
   `mergeProjectChanges` when `baseSeq` is stale, and stores complete snapshots in
-  `StoredOperation`. `party/server.ts:380-395` currently broadcasts the complete
+  `StoredOperation`. `partykit/server.ts:380-395` currently broadcasts the complete
   `afterProject` as `project`.
-- `party/server.ts:14-16` already caps JSON messages at 4,000,000 characters;
+- `partykit/server.ts:14-16` already caps JSON messages at 4,000,000 characters;
   patch mode needs a much smaller cell-count cap so one client cannot create an
   expensive validation/apply loop inside that byte limit.
 - `src/store/projectStore.ts` represents pixels as palette indices and tilemap
@@ -86,7 +86,7 @@ for high-frequency cell edits becomes compact.
   before/after pair, patch validation/application, and operation message unions.
 - `src/realtime/roomClient.ts` — choose patch mode for eligible changes, apply
   patch broadcasts, and retain plan 014's outbox/retry behavior.
-- `party/server.ts` — validate/apply patch operations, persist full snapshots for
+- `partykit/server.ts` — validate/apply patch operations, persist full snapshots for
   history, and broadcast patches to ready clients.
 
 **Out of scope**:
@@ -230,7 +230,7 @@ malformed patch cannot call `applyRoomProject` with unvalidated data.
 
 ### Step 5: Add server patch handling and history preservation
 
-In `party/server.ts`:
+In `partykit/server.ts`:
 
 - validate `mode`, operation ID, label, base sequence, and patch shape before
   applying it;
@@ -289,7 +289,7 @@ structural add-sprite operation to verify both modes.
 - [ ] Repeated operation IDs remain idempotent in both modes.
 - [ ] `npm run lint`, `npm run typecheck`, and `npm run build` exit 0.
 - [ ] Only `src/realtime/protocol.ts`, `src/realtime/roomClient.ts`, and
-      `party/server.ts` are modified by this plan.
+      `partykit/server.ts` are modified by this plan.
 
 ## STOP conditions
 

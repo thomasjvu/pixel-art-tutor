@@ -1,14 +1,87 @@
 import { create } from "zustand";
 import type { ActiveRoomListing, PixelPoint, PresenceStatus, RoomPresence } from "../realtime/protocol";
 import { clampTutorialStep } from "../engine/tutorial";
+import {
+  DEFAULT_CODEX_PET,
+  normalizeCodexPet,
+  petByName,
+  type CodexPet,
+  type CodexPetSource,
+  type PetDiscoveryStatus,
+} from "../pets/codexPets";
 
 const ACT_AS_AGENT_KEY = "pixel-art-tutor.act-as-agent.v1";
+const CODEX_PET_KEY = "pixel-art-tutor.codex-pet.v1";
+const THEME_KEY = "pixel-art-tutor.theme.v1";
+
+export type StudioTheme = "dark" | "light";
 
 function storedActAsAgent(): boolean {
   try {
     return localStorage.getItem(ACT_AS_AGENT_KEY) === "1";
   } catch {
     return false;
+  }
+}
+
+function storedTheme(): StudioTheme {
+  try {
+    return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function migrateStoredPet(pet: CodexPet | null): CodexPet | null {
+  if (!pet) return null;
+  // Earlier builds shipped placeholder companions with these ids. Prefer the
+  // real bundled Codex art when an old localStorage selection is encountered.
+  if (["codey", "sprout", "miso", "star"].includes(pet.id) && !pet.imageUrl) return DEFAULT_CODEX_PET;
+  return pet;
+}
+
+function defaultPetSelection(): StoredPetSelection {
+  const configured = import.meta.env.VITE_CODEX_PET?.trim();
+  return configured
+    ? { pet: petByName(configured), source: "codex" }
+    : { pet: DEFAULT_CODEX_PET, source: "built-in" };
+}
+
+interface StoredPetSelection {
+  pet: CodexPet | null;
+  source: CodexPetSource;
+}
+
+function storedPetSelection(): StoredPetSelection {
+  try {
+    const raw = localStorage.getItem(CODEX_PET_KEY);
+    if (!raw) return defaultPetSelection();
+    if (raw === "none") return { pet: null, source: "none" };
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "pet" in parsed) {
+      const saved = parsed as { pet?: unknown; source?: unknown };
+      const pet = migrateStoredPet(normalizeCodexPet(saved.pet));
+      if (pet) {
+        const source: CodexPetSource = saved.source === "codex" ? "codex" : "built-in";
+        return { pet, source };
+      }
+    }
+    const pet = migrateStoredPet(normalizeCodexPet(parsed));
+    return pet ? { pet, source: "built-in" } : defaultPetSelection();
+  } catch {
+    return defaultPetSelection();
+  }
+}
+
+function savePetSelection(pet: CodexPet | null, source: CodexPetSource): void {
+  try {
+    if (!pet || source === "none") {
+      localStorage.setItem(CODEX_PET_KEY, "none");
+      return;
+    }
+    localStorage.setItem(CODEX_PET_KEY, JSON.stringify({ pet, source }));
+  } catch {
+    /* localStorage may be unavailable in a private or embedded browser */
   }
 }
 
@@ -79,6 +152,8 @@ interface UiState {
   roomDirectoryStatus: RoomDirectoryStatus;
   roomDirectoryError: string | null;
   preferencesOpen: boolean;
+  newProjectOpen: boolean;
+  theme: StudioTheme;
   shareOpen: boolean;
   roomCanUndo: boolean;
   roomCanRedo: boolean;
@@ -92,6 +167,12 @@ interface UiState {
   setTutorialStep(step: number): void;
   agentActivity: AgentActivityEntry[];
   noteAgentActivity(peers: RoomPresence[]): void;
+  selectedPet: CodexPet | null;
+  petSource: CodexPetSource;
+  petDiscovery: PetDiscoveryStatus;
+  setSelectedPet(pet: CodexPet | null, source?: CodexPetSource): void;
+  adoptCodexPet(pet: CodexPet): void;
+  setPetDiscovery(status: PetDiscoveryStatus): void;
   /** When true this window presents as kind "agent" even while idle. */
   actAsAgent: boolean;
   setActAsAgent(act: boolean): void;
@@ -119,6 +200,8 @@ interface UiState {
     error?: string | null,
   ): void;
   setPreferencesOpen(open: boolean): void;
+  setNewProjectOpen(open: boolean): void;
+  setTheme(theme: StudioTheme): void;
   setShareOpen(open: boolean): void;
   setRoomHistory(canUndo: boolean, canRedo: boolean): void;
 }
@@ -172,6 +255,8 @@ export const useUi = create<UiState>()((set) => ({
   roomDirectoryStatus: "idle",
   roomDirectoryError: null,
   preferencesOpen: false,
+  newProjectOpen: false,
+  theme: storedTheme(),
   shareOpen: false,
   roomCanUndo: false,
   roomCanRedo: false,
@@ -207,6 +292,28 @@ export const useUi = create<UiState>()((set) => ({
       }
       return { agentActivity: next.slice(0, 10) };
     }),
+  ...(() => {
+    const selection = storedPetSelection();
+    return {
+      selectedPet: selection.pet,
+      petSource: selection.source,
+      petDiscovery: selection.source === "codex" ? "detected" as PetDiscoveryStatus : "searching" as PetDiscoveryStatus,
+    };
+  })(),
+  setSelectedPet: (selectedPet, source = selectedPet ? "built-in" : "none") => {
+    const petSource: CodexPetSource = selectedPet ? source : "none";
+    savePetSelection(selectedPet, petSource);
+    set({
+      selectedPet,
+      petSource,
+      petDiscovery: petSource === "none" ? "none" : petSource === "codex" ? "detected" : "fallback",
+    });
+  },
+  adoptCodexPet: (selectedPet) => {
+    savePetSelection(selectedPet, "codex");
+    set({ selectedPet, petSource: "codex", petDiscovery: "detected" });
+  },
+  setPetDiscovery: (petDiscovery) => set({ petDiscovery }),
   actAsAgent: storedActAsAgent(),
   setActAsAgent: (actAsAgent) => {
     try {
@@ -264,6 +371,15 @@ export const useUi = create<UiState>()((set) => ({
   setActiveRooms: (activeRooms, roomDirectoryStatus = "ready", roomDirectoryError = null) =>
     set({ activeRooms, roomDirectoryStatus, roomDirectoryError }),
   setPreferencesOpen: (preferencesOpen) => set({ preferencesOpen }),
+  setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
+  setTheme: (theme) => {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* localStorage may be unavailable in a private or embedded browser */
+    }
+    set({ theme });
+  },
   setShareOpen: (shareOpen) => set({ shareOpen }),
   setRoomHistory: (roomCanUndo, roomCanRedo) => set({ roomCanUndo, roomCanRedo }),
 }));

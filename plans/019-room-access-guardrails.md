@@ -6,8 +6,8 @@
 > not improvise. Modify only the files in Scope. Update this plan's status row in
 > `plans/README.md` when complete unless a reviewer maintains the index.
 >
-> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- party/server.ts src/realtime/roomClient.ts wrangler.jsonc README.md` and
-> `git diff --stat 78aad52 -- party/server.ts src/realtime/roomClient.ts wrangler.jsonc README.md`.
+> **Drift check (run first)**: `git diff --stat 78aad52..HEAD -- partykit/server.ts src/realtime/roomClient.ts wrangler.jsonc README.md` and
+> `git diff --stat 78aad52 -- partykit/server.ts src/realtime/roomClient.ts wrangler.jsonc README.md`.
 > The second command includes unstaged changes. If the Current state excerpts do
 > not match the live code, stop and refresh the plan.
 
@@ -46,16 +46,16 @@ pretend that a client-supplied name is authentication.
     return room;
   }
   ```
-- `party/server.ts:146-173` derives `clientId`, name, and color from connection
+- `partykit/server.ts:146-173` derives `clientId`, name, and color from connection
   query parameters and stores them as presence. These are display fields, not
   verified identity.
-- `party/server.ts:224-249` accepts any valid project as the initial room state;
-  `party/server.ts:265-305` accepts edits from every ready connection. There is
+- `partykit/server.ts:224-249` accepts any valid project as the initial room state;
+  `partykit/server.ts:265-305` accepts edits from every ready connection. There is
   no authorization layer.
-- `party/server.ts:180-201` caps each message at 4,000,000 string characters and
+- `partykit/server.ts:180-201` caps each message at 4,000,000 string characters and
   validates JSON/project shape, but there is no per-connection or per-room rate
   limit and no maximum connection count.
-- `party/server.ts:438-443` routes with `{ cors: true }`, allowing broad browser
+- `partykit/server.ts:438-443` routes with `{ cors: true }`, allowing broad browser
   origins. The exact supported restrictive CORS configuration must be confirmed
   from the installed PartyServer version before changing it.
 - `README.md:99-112` documents shared rooms but does not say that a room URL is a
@@ -80,7 +80,7 @@ pretend that a client-supplied name is authentication.
 
 - `src/realtime/roomClient.ts` — cryptographically strong room ID generation
   for newly created rooms.
-- `party/server.ts` — connection/message rate budgets, connection cap, and
+- `partykit/server.ts` — connection/message rate budgets, connection cap, and
   explicit authorization-policy comments/config handling.
 - `wrangler.jsonc` — non-secret room guardrail configuration if required by the
   worker implementation.
@@ -138,7 +138,7 @@ cryptographic entropy for the fallback.
 
 ### Step 3: Add bounded connection and message budgets on the worker
 
-In `party/server.ts`, define named constants for small-room defaults, for example:
+In `partykit/server.ts`, define named constants for small-room defaults, for example:
 
 - `MAX_CONNECTIONS_PER_ROOM = 16`;
 - `MAX_OPERATIONS_PER_WINDOW = 30` per connection per 10 seconds;

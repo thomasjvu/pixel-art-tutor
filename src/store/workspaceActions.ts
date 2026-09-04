@@ -1,13 +1,13 @@
 import { useStore } from "./projectStore";
-import { useWorkspace } from "./workspaceStore";
+import { useWorkspace, type NewProjectOptions } from "./workspaceStore";
 
 function syncCurrentTab(): void {
   useWorkspace.getState().syncActive(useStore.getState().project);
 }
 
-export function createBlankProjectTab(): void {
+export function createBlankProjectTab(options?: NewProjectOptions): void {
   syncCurrentTab();
-  const tab = useWorkspace.getState().createBlankTab();
+  const tab = useWorkspace.getState().createBlankTab(options);
   useStore.getState().loadProject(tab.project);
 }
 

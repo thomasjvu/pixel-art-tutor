@@ -26,11 +26,12 @@ import {
   rotate90,
   shiftWrap,
 } from "../engine/pixels";
-import { blankProject, createStarterProject } from "../engine/seed";
+import { blankProject, BLANK_CANVAS_SIZE, createStarterProject } from "../engine/seed";
 import { sanitizeProject } from "../engine/validate";
 import { createUniqueId } from "./projectIds";
 import {
   MAX_DIMENSION,
+  DEFAULT_CHARACTER_FRAME_COUNT,
   MAX_FRAMES_PER_SPRITE,
   MAX_LAYERS_PER_SPRITE,
   MAX_PALETTE_COLORS,
@@ -38,6 +39,7 @@ import {
   MAX_PROJECT_NAME_LENGTH,
   MAX_SPRITE_NAME_LENGTH,
   MAX_SPRITES,
+  MAX_TILEMAP_DIMENSION,
   MAX_TOTAL_PIXEL_CELLS,
   projectPixelCells,
 } from "../projectLimits";
@@ -187,6 +189,46 @@ function preserveRejectedStoredProject(raw: string): void {
   console.warn(`Saved project data was not usable; a recovery copy is available as ${STORAGE_RECOVERY_KEY}.`);
 }
 
+const LEGACY_BLANK_CANVAS_SIZE = 64;
+
+function upgradeLegacyBlankCanvas(project: Project): Project {
+  const sprite = project.sprites.length === 1 ? project.sprites[0] : null;
+  if (
+    !sprite ||
+    project.tilemap !== null ||
+    sprite.kind !== "character" ||
+    sprite.width !== LEGACY_BLANK_CANVAS_SIZE ||
+    sprite.height !== LEGACY_BLANK_CANVAS_SIZE
+  ) {
+    return project;
+  }
+  const sourceFrames = sprite.layers?.length ? sprite.layers.flatMap((layer) => layer.frames) : sprite.frames;
+  if (sourceFrames.length === 0 || sourceFrames.some((frame) => frame.pixels.some((pixel) => pixel !== TRANSPARENT))) {
+    return project;
+  }
+
+  const next = cloneProject(project);
+  const nextSprite = next.sprites[0]!;
+  nextSprite.width = BLANK_CANVAS_SIZE;
+  nextSprite.height = BLANK_CANVAS_SIZE;
+  const blankPixels = () => new Array(BLANK_CANVAS_SIZE * BLANK_CANVAS_SIZE).fill(TRANSPARENT);
+  const nextLayers = (nextSprite.layers?.length ? nextSprite.layers : [{
+    id: `${nextSprite.id}-artwork`,
+    name: "Artwork",
+    visible: true,
+    locked: false,
+    opacity: 1,
+    blendMode: "normal" as const,
+    frames: nextSprite.frames,
+  }]).map((layer) => ({
+    ...layer,
+    frames: layer.frames.map((frame) => ({ ...frame, pixels: blankPixels() })),
+  }));
+  nextSprite.layers = nextLayers;
+  nextSprite.frames = nextLayers[0]!.frames;
+  return next;
+}
+
 function loadStored(): Project | null {
   try {
     storedRecoveryRaw = localStorage.getItem(STORAGE_RECOVERY_KEY);
@@ -197,14 +239,23 @@ function loadStored(): Project | null {
       initialStorageStatus = "unavailable";
       return null;
     }
-    const project = sanitizeProject(JSON.parse(raw));
-    if (!project) {
+    const sanitized = sanitizeProject(JSON.parse(raw));
+    if (!sanitized) {
       preserveRejectedStoredProject(raw);
       initialStorageStatus = "unavailable";
     } else {
-      initialStorageStatus = "saved";
+      const project = upgradeLegacyBlankCanvas(sanitized);
+      if (project !== sanitized) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+        } catch {
+          initialStorageStatus = "unavailable";
+        }
+      }
+      if (initialStorageStatus !== "unavailable") initialStorageStatus = "saved";
+      return project;
     }
-    return project;
+    return null;
   } catch {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -260,6 +311,12 @@ function projectsEqual(a: Project, b: Project): boolean {
 function safeDimension(value: number, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(1, Math.min(MAX_DIMENSION, Math.round(value)))
+    : fallback;
+}
+
+function safeFrameCount(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(1, Math.min(MAX_FRAMES_PER_SPRITE, Math.round(value)))
     : fallback;
 }
 
@@ -382,7 +439,14 @@ interface ProjectState {
   setPaletteAlpha(index: number, alpha: number): boolean;
   movePaletteColor(fromIndex: number, toIndex: number): boolean;
   setActiveSprite(spriteId: string, frameIndex?: number): boolean;
-  addSprite(opts: { name: string; width: number; height: number; kind: SpriteKind; copyFromId?: string }): string | null;
+  addSprite(opts: {
+    name: string;
+    width: number;
+    height: number;
+    kind: SpriteKind;
+    copyFromId?: string;
+    frameCount?: number;
+  }): string | null;
   deleteSprite(id: string): void;
   renameSprite(id: string, name: string): void;
   renameProject(name: string): void;
@@ -429,7 +493,7 @@ interface ProjectState {
   deletePaletteSave(name: string): boolean;
   applyRoomProject(p: Project): boolean;
   dismissStorageRecovery(): void;
-  resetProject(kind: "starter" | "blank"): void;
+  resetProject(kind: "starter" | "blank", frameCount?: number): void;
   exportProject(): string;
 }
 
@@ -1001,12 +1065,16 @@ export const useStore = create<ProjectState>()((set, get) => {
       const w = safeDimension(opts.width, 16);
       const h = safeDimension(opts.height, 16);
       let pixels = emptyPixels(w, h);
-      let frameCount = kind === "character" ? 2 : 1;
+      const explicitFrameCount = typeof opts.frameCount === "number" && Number.isFinite(opts.frameCount);
+      let frameCount = safeFrameCount(
+        opts.frameCount,
+        kind === "character" ? DEFAULT_CHARACTER_FRAME_COUNT : 1,
+      );
       if (opts.copyFromId) {
         const src = project.sprites.find((s) => s.id === opts.copyFromId);
         if (src && src.width === w && src.height === h) {
           pixels = [...src.frames[0].pixels];
-          frameCount = src.frames.length;
+          if (!explicitFrameCount) frameCount = src.frames.length;
         }
       }
       if (projectPixelCells(project) + w * h * frameCount > MAX_TOTAL_PIXEL_CELLS) return null;
@@ -1487,8 +1555,8 @@ export const useStore = create<ProjectState>()((set, get) => {
 
     ensureTilemap(cols, rows) {
       const { project } = get();
-      const c = Math.max(2, Math.min(MAX_DIMENSION, safeDimension(cols, 12)));
-      const r = Math.max(2, Math.min(MAX_DIMENSION, safeDimension(rows, 9)));
+      const c = Math.max(2, Math.min(MAX_TILEMAP_DIMENSION, safeDimension(cols, 12)));
+      const r = Math.max(2, Math.min(MAX_TILEMAP_DIMENSION, safeDimension(rows, 9)));
       const next = cloneProject(project);
       if (
         next.tilemap &&
@@ -1701,15 +1769,17 @@ export const useStore = create<ProjectState>()((set, get) => {
       set({ storageRecovery: false });
     },
 
-    resetProject(kind) {
+    resetProject(kind, frameCount) {
       finishStroke();
-      const p = kind === "starter" ? createStarterProject() : blankProject();
+      const p = kind === "starter" ? createStarterProject() : blankProject(frameCount);
       const prepared = cloneProject(p);
       commit(prepared, { activeSpriteId: prepared.sprites[0].id, activeFrameIndex: 0, selectedTileId: null });
     },
 
     exportProject() {
-      return JSON.stringify(get().project, null, 2);
+      // Compact JSON keeps 256×256 multi-frame projects importable under the
+      // bounded project-file limit while preserving the complete project data.
+      return JSON.stringify(get().project);
     },
   };
 });

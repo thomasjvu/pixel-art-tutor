@@ -25,8 +25,8 @@ The relevant current behavior is:
 - src/realtime/protocol.ts defines the server-to-client messages and the RoomClientMessage union, but there is no snapshot-request message.
 - src/realtime/roomClient.ts:449-477 applies an incoming operation. When applyRoomPatch returns null, it sets lastSeq to the failed message sequence and calls setRoomError, then returns.
 - src/realtime/roomClient.ts:216-249 handles welcome snapshots and currently assumes they are initial connection or ordinary reconnect reconciliation.
-- party/server.ts routes hello, operation, undo, redo, presence, and leave messages in onMessage. There is no snapshot-request route.
-- party/server.ts already has the canonical project and sequence available to send in the welcome path.
+- partykit/server.ts routes hello, operation, undo, redo, presence, and leave messages in onMessage. There is no snapshot-request route.
+- partykit/server.ts already has the canonical project and sequence available to send in the welcome path.
 
 The existing RoomClient is built on PartySocket 1.3.0 with automatic reconnect. The client should use the supported reconnect path if a request cannot be sent, but must not call the intentional close helper used for leaving a room.
 
@@ -36,9 +36,9 @@ Run:
 
 | Check | Command | Expected interpretation |
 | --- | --- | --- |
-| Committed drift | git diff --stat b36fad5..HEAD -- src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Empty or explainable branch commits |
-| Working-tree drift | git diff --stat b36fad5 -- src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Expected to include current realtime implementation changes |
-| Current failure path | rg -n "applyRoomPatch|lastSeq|onWelcome|onMessage|RoomClientMessage" src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Confirm the locations and names before editing |
+| Committed drift | git diff --stat b36fad5..HEAD -- src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Empty or explainable branch commits |
+| Working-tree drift | git diff --stat b36fad5 -- src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Expected to include current realtime implementation changes |
+| Current failure path | rg -n "applyRoomPatch|lastSeq|onWelcome|onMessage|RoomClientMessage" src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Confirm the locations and names before editing |
 
 If a resync mechanism already exists, verify that it actually blocks later patches and reconciles the outbox before replacing it.
 
@@ -52,7 +52,7 @@ Run from the repository root:
 | Lint | npm run lint | Exit 0; the known CanvasStage warning may remain |
 | Production build | npm run build | Exit 0 |
 | Patch hygiene | git diff --check | No output |
-| Recovery-path review | rg -n "snapshot_request|resync|applyRoomPatch|onWelcome|reconnect" src/realtime/protocol.ts src/realtime/roomClient.ts party/server.ts | Shows request, guard, response, and fallback paths |
+| Recovery-path review | rg -n "snapshot_request|resync|applyRoomPatch|onWelcome|reconnect" src/realtime/protocol.ts src/realtime/roomClient.ts partykit/server.ts | Shows request, guard, response, and fallback paths |
 
 ## Scope
 
@@ -60,7 +60,7 @@ Only edit:
 
 - src/realtime/protocol.ts
 - src/realtime/roomClient.ts
-- party/server.ts
+- partykit/server.ts
 
 Do not change the project store, persistence format, authentication, or the semantics of explicit stop/join operations. Automated tests remain deferred by the maintainer; specify future test cases without creating test files.
 
@@ -80,7 +80,7 @@ Add a RoomClientMessage variant with a stable shape:
       lastSeq: number;
     }
 
-Validate the protocol version and require a finite non-negative lastSeq. Keep this request distinct from hello so it does not reset room identity or presence unnecessarily. If the current protocol validation is not centralized, follow the existing manual validation style in party/server.ts and keep the new branch as strict as operation validation.
+Validate the protocol version and require a finite non-negative lastSeq. Keep this request distinct from hello so it does not reset room identity or presence unnecessarily. If the current protocol validation is not centralized, follow the existing manual validation style in partykit/server.ts and keep the new branch as strict as operation validation.
 
 Run:
 
@@ -177,4 +177,3 @@ Stop and report if:
 ## Maintenance notes
 
 Keep resync state separate from offline state. A connected socket can still be divergent and must be represented as recovering until a canonical snapshot is processed. Any future message that depends on sequence continuity should be gated by the same resync state.
-

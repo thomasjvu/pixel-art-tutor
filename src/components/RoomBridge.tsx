@@ -16,6 +16,7 @@ export function RoomBridge() {
   const tutorialOpen = useUi((state) => state.tutorialOpen);
   const tutorialStep = useUi((state) => state.tutorialStep);
   const actAsAgent = useUi((state) => state.actAsAgent);
+  const selectedPet = useUi((state) => state.selectedPet);
 
   useEffect(() => {
     roomClient.start();
@@ -39,7 +40,7 @@ export function RoomBridge() {
       return;
     }
     roomClient.updatePresence({
-      name: roomClient.displayName,
+      name: actAsAgent ? (selectedPet?.name ?? "Studio Guide") : roomClient.displayName,
       kind: actAsAgent ? "agent" : "human",
       status: "idle",
       tool,
@@ -50,10 +51,10 @@ export function RoomBridge() {
       message: "Browsing the studio",
       preview: [],
     });
-  }, [actAsAgent, activeFrameIndex, activeSprite?.id, agentPresence, hover, tool]);
+  }, [actAsAgent, activeFrameIndex, activeSprite?.id, agentPresence, hover, selectedPet?.name, tool]);
 
   // Follow mode: point our editor at the sprite an agent peer is working on,
-  // so humans watch agent edits (and the Pixel Bot cursor) happen live instead
+  // so humans watch agent edits (and the companion cursor) happen live instead
   // of discovering them after the fact. Only follows while the agent is
   // actively working; a finished ("done"/"idle") action leaves the view alone.
   useEffect(() => {

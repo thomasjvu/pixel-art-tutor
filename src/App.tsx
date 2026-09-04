@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Icon } from "./components/Icon";
 import { CanvasStage } from "./components/CanvasStage";
 import { Toolbar } from "./components/Toolbar";
@@ -18,6 +18,7 @@ import { RoomBridge } from "./components/RoomBridge";
 import { RoomPanel } from "./components/RoomPanel";
 import { TutorialOverlay } from "./components/TutorialOverlay";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { NewProjectDialog } from "./components/NewProjectDialog";
 import { decodeProjectFromHashParam } from "./engine/share";
 import { downloadText, spriteFileStem } from "./engine/exportImage";
 import { registerTutorTools } from "./webmcp/registerTools";
@@ -25,9 +26,9 @@ import { useUi } from "./store/uiStore";
 import { useEditor } from "./store/editorStore";
 import { useStore } from "./store/projectStore";
 import { redoProject, undoProject } from "./realtime/roomClient";
-import { createBlankProjectTab } from "./store/workspaceActions";
 import { matchesShortcut, usePreferences } from "./store/preferencesStore";
 import { spriteLayers } from "./types";
+import { subscribeToCodexPet } from "./pets/codexPets";
 
 type Tab = "sprites" | "palette" | "frames" | "map" | "critique" | "agent" | "room";
 
@@ -44,9 +45,12 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 function AppContent() {
   const [tab, setTab] = useState<Tab>("sprites");
   const mcpStatus = useUi((s) => s.mcpStatus);
+  const theme = useUi((s) => s.theme);
   const projectName = useStore((s) => s.project.name);
   const toolbarOpen = useEditor((s) => s.toolbarOpen);
   const sidebarOpen = useEditor((s) => s.sidebarOpen);
+  const timelineOpen = useEditor((s) => s.timelineOpen);
+  const timelineHeight = useEditor((s) => s.timelineHeight);
   const hydratedShareParam = useRef<string | null>(null);
 
   useEffect(() => {
@@ -63,6 +67,23 @@ function AppContent() {
   useEffect(() => {
     const controller = registerTutorTools();
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    let detected = false;
+    const unsubscribe = subscribeToCodexPet((pet) => {
+      detected = true;
+      useUi.getState().adoptCodexPet(pet);
+    });
+    const fallbackTimer = window.setTimeout(() => {
+      if (detected) return;
+      const state = useUi.getState();
+      state.setPetDiscovery(state.selectedPet ? "fallback" : "none");
+    }, 800);
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -88,7 +109,7 @@ function AppContent() {
       }
       if (command && key === "n") {
         event.preventDefault();
-        createBlankProjectTab();
+        useUi.getState().setNewProjectOpen(true);
         return;
       }
       if (command && key === "z") {
@@ -222,7 +243,7 @@ function AppContent() {
   }, []);
 
   return (
-    <div className="app">
+    <div className={`app theme-${theme} ${toolbarOpen ? "" : "toolbar-collapsed"} ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
       <RoomBridge />
 
       <ProjectMenu />
@@ -241,7 +262,10 @@ function AppContent() {
         ) : (
           <Toolbar />
         )}
-        <section className="editor-column">
+        <section
+          className={timelineOpen ? "editor-column" : "editor-column timeline-collapsed"}
+          style={{ "--timeline-height": `${timelineOpen ? timelineHeight : 42}px` } as CSSProperties}
+        >
           <CanvasStage />
           <TimelinePanel />
         </section>
@@ -323,6 +347,7 @@ function AppContent() {
 
       <StatusBar onOpenAgent={() => setTab("agent")} />
       <PreferencesDialog />
+      <NewProjectDialog />
       <ShareDialog />
       <TutorialOverlay />
     </div>

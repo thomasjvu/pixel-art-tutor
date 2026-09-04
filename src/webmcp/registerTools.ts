@@ -13,7 +13,13 @@ import {
   finishAgentAction,
   showAgentAction,
 } from "../realtime/agentAnimation";
-import { MAX_PROJECT_JSON_LENGTH, MAX_PROJECT_NAME_LENGTH, MAX_SPRITE_NAME_LENGTH } from "../projectLimits";
+import {
+  MAX_DIMENSION,
+  MAX_PROJECT_JSON_LENGTH,
+  MAX_PROJECT_NAME_LENGTH,
+  MAX_SPRITE_NAME_LENGTH,
+  MAX_TILEMAP_DIMENSION,
+} from "../projectLimits";
 
 function log(tool: string, summary: string) {
   useUi.getState().pushLog({ tool, summary, source: "agent" });
@@ -328,10 +334,10 @@ export function registerTutorTools(): AbortController {
       inputSchema: {
         type: "object",
         properties: {
-          x: { type: "number", minimum: -64, maximum: 128 },
-          y: { type: "number", minimum: -64, maximum: 128 },
-          width: { type: "number", minimum: -64, maximum: 128 },
-          height: { type: "number", minimum: -64, maximum: 128 },
+          x: { type: "number", minimum: -MAX_DIMENSION, maximum: MAX_DIMENSION },
+          y: { type: "number", minimum: -MAX_DIMENSION, maximum: MAX_DIMENSION },
+          width: { type: "number", minimum: -MAX_DIMENSION, maximum: MAX_DIMENSION },
+          height: { type: "number", minimum: -MAX_DIMENSION, maximum: MAX_DIMENSION },
           color: colorSchemaProp,
           spriteId: { type: "string" },
           frameIndex: { type: "number" },
@@ -976,7 +982,8 @@ export function registerTutorTools(): AbortController {
     }>({
       name: "set_canvas_options",
       title: "Set canvas options",
-      description: "Set zoom, grid, pixel-perfect stroke, shading ink, tiled preview, and dither brush options.",
+      description:
+        "Set zoom, grid, pixel-perfect stroke, shading ink, tiled preview, and dither brush options. The default canvas is a 256x256 logical grid displayed at 1px per cell; zoom in for detailed editing.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1076,27 +1083,34 @@ export function registerTutorTools(): AbortController {
       height: number;
       kind: "character" | "item" | "tile";
       copyFromId?: string;
+      frameCount?: number;
     }>({
       name: "add_sprite",
       title: "Create sprite",
       description:
-        "Create a new empty sprite (character, item, or tile for the tileset). It becomes the active sprite so the human sees it immediately. Optionally copy dimensions/content from an existing sprite.",
+        "Create a new empty sprite (character, item, or tile for the tileset). It becomes the active sprite so the human sees it immediately. Character sprites default to 4 empty animation frames and items/tiles default to 1; pass frameCount to choose another count. Optionally copy dimensions/content from an existing sprite.",
       inputSchema: {
         type: "object",
         properties: {
           name: { type: "string", maxLength: MAX_SPRITE_NAME_LENGTH },
-          width: { type: "number", description: "1-64, typically 16, 32 or 64" },
-          height: { type: "number", description: "1-64, typically 16, 32 or 64" },
+          width: { type: "number", description: "1-256 logical pixels, typically 16, 32, 64, 128, or 256" },
+          height: { type: "number", description: "1-256 logical pixels, typically 16, 32, 64, 128, or 256" },
           kind: {
             type: "string",
             enum: ["character", "item", "tile"],
             description: "'tile' adds it to the tileset for map painting.",
           },
           copyFromId: { type: "string", description: "Clone pixels from this sprite id if sizes match." },
+          frameCount: {
+            type: "number",
+            minimum: 1,
+            maximum: 32,
+            description: "Animation frame count. Defaults to 4 for characters and 1 for items/tiles.",
+          },
         },
         required: ["name", "width", "height", "kind"],
       },
-      execute: async ({ name, width, height, kind, copyFromId }) => {
+      execute: async ({ name, width, height, kind, copyFromId, frameCount }) => {
         const actionId = beginAgentAction({
           tool: "add_sprite",
           spriteId: null,
@@ -1106,7 +1120,7 @@ export function registerTutorTools(): AbortController {
         });
         await showAgentAction(actionId);
         interruptHumanStroke();
-        const id = useStore.getState().addSprite({ name, width, height, kind, copyFromId });
+        const id = useStore.getState().addSprite({ name, width, height, kind, copyFromId, frameCount });
         if (!id) {
           finishAgentAction(actionId, "Project capacity reached");
           log("add_sprite", "rejected: project capacity reached");
@@ -1114,7 +1128,8 @@ export function registerTutorTools(): AbortController {
         }
         finishAgentAction(actionId, `Created ${name || "new sprite"}`);
         log("add_sprite", `${name} (${kind})`);
-        return { ok: true, spriteId: id };
+        const created = useStore.getState().project.sprites.find((sprite) => sprite.id === id);
+        return { ok: true, spriteId: id, frames: created?.frames.length ?? 0 };
       },
     }),
 
@@ -1164,12 +1179,12 @@ export function registerTutorTools(): AbortController {
       name: "ensure_tilemap",
       title: "Create or resize tilemap",
       description:
-        "Create the project tilemap (or resize it, preserving overlapping cells) so tiles can be placed. Cols/rows are clamped to 2-64; default to 12x9 when unsure. No-ops with ok:true if the map already has these dimensions.",
+        `Create the project tilemap (or resize it, preserving overlapping cells) so tiles can be placed. Cols/rows are clamped to 2-${MAX_TILEMAP_DIMENSION}; default to 12x9 when unsure. No-ops with ok:true if the map already has these dimensions.`,
       inputSchema: {
         type: "object",
         properties: {
-          cols: { type: "number", description: "Map width in tiles (2-64)" },
-          rows: { type: "number", description: "Map height in tiles (2-64)" },
+          cols: { type: "number", minimum: 2, maximum: MAX_TILEMAP_DIMENSION, description: `Map width in tiles (2-${MAX_TILEMAP_DIMENSION})` },
+          rows: { type: "number", minimum: 2, maximum: MAX_TILEMAP_DIMENSION, description: `Map height in tiles (2-${MAX_TILEMAP_DIMENSION})` },
         },
         required: ["cols", "rows"],
       },
@@ -1229,10 +1244,10 @@ export function registerTutorTools(): AbortController {
       inputSchema: {
         type: "object",
         properties: {
-          x: { type: "number", minimum: -64, maximum: 128 },
-          y: { type: "number", minimum: -64, maximum: 128 },
-          width: { type: "number", minimum: -64, maximum: 128 },
-          height: { type: "number", minimum: -64, maximum: 128 },
+          x: { type: "number", minimum: -MAX_TILEMAP_DIMENSION, maximum: MAX_TILEMAP_DIMENSION },
+          y: { type: "number", minimum: -MAX_TILEMAP_DIMENSION, maximum: MAX_TILEMAP_DIMENSION },
+          width: { type: "number", minimum: -MAX_TILEMAP_DIMENSION, maximum: MAX_TILEMAP_DIMENSION },
+          height: { type: "number", minimum: -MAX_TILEMAP_DIMENSION, maximum: MAX_TILEMAP_DIMENSION },
           tileId: { anyOf: [{ type: "string" }, { type: "null" }] },
         },
         required: ["x", "y", "width", "height"],
@@ -1337,19 +1352,20 @@ export function registerTutorTools(): AbortController {
           : { ok: false, error: result.error };
       },
     }),
-    defineTool<{ confirm: boolean }>({
+    defineTool<{ confirm: boolean; frameCount?: number }>({
       name: "new_canvas",
       title: "New blank canvas",
       description:
-        "Replace the current project with a fresh blank 64x64 canvas (one empty character sprite, default palette, no tilemap). Requires confirm:true. The human sees the blank canvas immediately; use this to start a new drawing together.",
+        "Replace the current project with a fresh blank 256x256 logical canvas (one empty character sprite, default palette, no tilemap). Defaults to 4 empty animation frames; pass frameCount to choose another count. Requires confirm:true. The human sees the blank canvas immediately; use this to start a new drawing together.",
       inputSchema: {
         type: "object",
         properties: {
           confirm: { type: "boolean", description: "Must be true to clear the current project" },
+          frameCount: { type: "number", minimum: 1, maximum: 32, description: "Optional animation frame count; defaults to 4." },
         },
         required: ["confirm"],
       },
-      execute: async ({ confirm }) => {
+      execute: async ({ confirm, frameCount }) => {
         if (confirm !== true) return { ok: false, error: "starting a new canvas requires confirm:true" };
         const actionId = beginAgentAction({
           tool: "new_canvas",
@@ -1360,11 +1376,16 @@ export function registerTutorTools(): AbortController {
         });
         await showAgentAction(actionId);
         interruptHumanStroke();
-        useStore.getState().resetProject("blank");
+        useStore.getState().resetProject("blank", frameCount);
         const after = useStore.getState().activeSprite();
         finishAgentAction(actionId, after ? `Fresh ${after.width}x${after.height} canvas ready` : "Fresh canvas ready");
         log("new_canvas", "started blank canvas");
-        return { ok: true, spriteId: after?.id ?? null, size: after ? `${after.width}x${after.height}` : null };
+        return {
+          ok: true,
+          spriteId: after?.id ?? null,
+          size: after ? `${after.width}x${after.height}` : null,
+          frames: after?.frames.length ?? 0,
+        };
       },
     }),
 

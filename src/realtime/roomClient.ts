@@ -96,7 +96,7 @@ function projectChanged(a: unknown, b: unknown): boolean {
 }
 
 function configuredHost(): string | null {
-  const envHost = import.meta.env.VITE_PARTY_HOST?.trim();
+  const envHost = import.meta.env.VITE_PARTYKIT_HOST?.trim() || import.meta.env.VITE_PARTY_HOST?.trim();
   if (envHost) return envHost;
   return import.meta.env.PROD ? window.location.host : null;
 }
@@ -104,6 +104,14 @@ function configuredHost(): string | null {
 function roomDirectoryUrl(host: string): string {
   const base = /^https?:\/\//i.test(host) ? host : `${window.location.protocol}//${host}`;
   return new URL("/api/rooms", base).toString();
+}
+
+function roomDirectoryErrorMessage(error: unknown, host: string): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+    return `Could not reach active rooms at ${host}. Start the room worker with “npm run room:dev” or check VITE_PARTYKIT_HOST.`;
+  }
+  return message || "Could not load active rooms.";
 }
 
 function parseActiveRooms(value: unknown): ActiveRoomListing[] {
@@ -262,7 +270,7 @@ export class RoomClient {
     const host = configuredHost();
     this.roomDirectoryAbort?.abort();
     if (!host) {
-      useUi.getState().setActiveRooms([], "unavailable", "Set VITE_PARTY_HOST to browse active rooms.");
+      useUi.getState().setActiveRooms([], "unavailable", "Set VITE_PARTYKIT_HOST to browse active rooms.");
       return;
     }
     const controller = new AbortController();
@@ -279,7 +287,7 @@ export class RoomClient {
       if (!controller.signal.aborted) useUi.getState().setActiveRooms(rooms, "ready", null);
     } catch (error) {
       if (controller.signal.aborted) return;
-      const message = error instanceof Error ? error.message : "Could not load active rooms.";
+      const message = roomDirectoryErrorMessage(error, host);
       useUi.getState().setActiveRooms(useUi.getState().activeRooms, "error", message);
     } finally {
       if (this.roomDirectoryAbort === controller) this.roomDirectoryAbort = null;
@@ -368,7 +376,7 @@ export class RoomClient {
     useUi.getState().setRoomConnection({
       roomId: room,
       roomHost: host,
-      roomError: host ? null : "Set VITE_PARTY_HOST to enable shared rooms.",
+      roomError: host ? null : "Set VITE_PARTYKIT_HOST to enable shared rooms.",
       roomStatus: host ? "connecting" : "disabled",
       roomSeq: 0,
       roomSyncBlocked: false,
